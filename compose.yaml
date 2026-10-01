@@ -1,5 +1,6 @@
-# Jumpseat + a Tailscale sidecar. The app has no published ports: it is only reachable
-# on your tailnet at https://<TS_HOSTNAME>.<your-tailnet>.ts.net, with HTTPS from Tailscale.
+# Jumpseat + a Tailscale sidecar. By default the app has no published ports: it is only
+# reachable on your tailnet at https://<TS_HOSTNAME>.<your-tailnet>.ts.net, with HTTPS from Tailscale.
+# `docker compose --profile lan up -d` also serves it over plain HTTP on your local network.
 services:
   tailscale:
     image: tailscale/tailscale:stable
@@ -30,8 +31,22 @@ services:
     environment:
       - DATABASE_URL=/data/jumpseat.db
       - PUBLIC_ORIGIN=${PUBLIC_ORIGIN:-}
+      # Both entrances (tailscale serve, and the optional LAN proxy) set this header,
+      # so the app knows whether a request arrived over HTTPS or plain HTTP.
+      - PROTOCOL_HEADER=x-forwarded-proto
     volumes:
       - jumpseat-data:/data
+    restart: unless-stopped
+
+  # Optional plain-HTTP entrance for your local network: http://<server-ip>:${LAN_PORT:-80}
+  lan:
+    image: caddy:2-alpine
+    profiles: [lan]
+    command: caddy reverse-proxy --from :80 --to tailscale:3000
+    ports:
+      - ${LAN_PORT:-80}:80
+    depends_on:
+      - app
     restart: unless-stopped
 
 volumes:

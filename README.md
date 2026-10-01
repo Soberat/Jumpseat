@@ -47,6 +47,22 @@ lives in the `jumpseat-data` volume, and migrations run automatically on start.
 On Proxmox, run it in a VM, or in an LXC container with nesting enabled and `/dev/net/tun`
 passed through (needed by the Tailscale sidecar).
 
+### Local network access without Tailscale (optional)
+
+```sh
+docker compose --profile lan up -d
+```
+
+This also serves Jumpseat at `http://<server-ip>` (change the port with `LAN_PORT` in `.env`).
+Keep in mind:
+
+- There is no login, so anyone on your network (including guests on your Wi-Fi) can see and
+  edit your trips.
+- It's plain HTTP, so browsers won't run the service worker there. Offline mode and "Add to Home
+  Screen" only work through the `ts.net` address.
+- On devices running Tailscale you don't need this: the `ts.net` address already connects
+  directly over your LAN.
+
 ### Sharing trips with people outside your tailnet
 
 Share links only work for others once you switch on
