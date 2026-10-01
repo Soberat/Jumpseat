@@ -13,17 +13,17 @@
 <section class="space-y-3">
 	<h1 class="text-2xl font-bold">Your trips</h1>
 	{#if data.trips.length === 0}
-		<p class="text-slate-500">No trips yet. Add your first one below.</p>
+		<p class="text-slate-500 dark:text-slate-400">No trips yet. Add your first one below.</p>
 	{:else}
 		<ul class="space-y-2">
 			{#each data.trips as t (t.id)}
 				<li>
 					<a
 						href="/trips/{t.id}"
-						class="block rounded-xl bg-white p-4 shadow-sm transition hover:shadow-md"
+						class="block rounded-xl bg-white p-4 shadow-sm transition hover:shadow-md dark:bg-slate-800"
 					>
 						<div class="font-semibold">{t.title}</div>
-						<div class="text-sm text-slate-500">
+						<div class="text-sm text-slate-500 dark:text-slate-400">
 							{placeAndDates(t.destination, t.startDate, t.endDate)}
 						</div>
 					</a>
@@ -33,7 +33,7 @@
 	{/if}
 </section>
 
-<section class="rounded-xl bg-white p-4 shadow-sm">
+<section class="rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
 	<h2 class="mb-3 text-lg font-semibold">New trip</h2>
 	<form method="POST" action="?/create" use:enhance class="grid gap-3 sm:grid-cols-2">
 		<label class="flex flex-col gap-1 text-sm">
@@ -53,7 +53,7 @@
 			<input type="date" name="endDate" />
 		</label>
 		{#if form?.error}
-			<p class="text-sm text-red-600 sm:col-span-2">{form.error}</p>
+			<p class="text-sm text-red-600 sm:col-span-2 dark:text-red-400">{form.error}</p>
 		{/if}
 		<button
 			class="rounded-lg bg-blue-900 px-4 py-2 font-medium text-white hover:bg-blue-800 sm:col-span-2"

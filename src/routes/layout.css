@@ -1,9 +1,14 @@
 @import 'tailwindcss';
 
 @layer base {
+	/* Native controls (date pickers, scrollbars) follow the device's light/dark setting. */
+	:root {
+		color-scheme: light dark;
+	}
+
 	input:not([type='checkbox']),
 	select,
 	textarea {
-		@apply rounded-lg border border-slate-300 bg-white px-3 py-2 text-base;
+		@apply rounded-lg border border-slate-300 bg-white px-3 py-2 text-base dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100;
 	}
 }
