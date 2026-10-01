@@ -5,7 +5,8 @@ services:
     image: tailscale/tailscale:stable
     hostname: ${TS_HOSTNAME:-jumpseat}
     environment:
-      - TS_AUTHKEY=${TS_AUTHKEY:?Set TS_AUTHKEY in .env (https://login.tailscale.com/admin/settings/keys)}
+      # Optional: without a key, `docker compose logs tailscale` prints a login link instead.
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
       - TS_HOSTNAME=${TS_HOSTNAME:-jumpseat}
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_SERVE_CONFIG=/config/${TS_SERVE_CONFIG:-serve.json}
