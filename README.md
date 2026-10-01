@@ -31,9 +31,12 @@ turned on (Tailscale admin console → DNS).
 ```sh
 git clone https://github.com/Soberat/jumpseat.git && cd jumpseat
 cp .env.example .env
-# Put an auth key from https://login.tailscale.com/admin/settings/keys in TS_AUTHKEY
+# Optional: put an auth key from https://login.tailscale.com/admin/settings/keys in TS_AUTHKEY
 docker compose up -d --build
 ```
+
+Without an auth key, run `docker compose logs tailscale` and open the login link it prints to
+add the machine to your tailnet. The login is kept in the `tailscale-state` volume.
 
 Jumpseat will be at `https://jumpseat.<your-tailnet>.ts.net` on any device in your tailnet.
 Open it on your phone and use "Add to Home Screen" to install it.
