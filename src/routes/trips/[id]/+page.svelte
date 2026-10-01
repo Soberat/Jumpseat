@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { placeAndDates } from '#lib/format.ts';
 	import { enhance } from '$app/forms';
-	import FlightCard from '#lib/components/FlightCard.svelte';
+	import AddToTimeline from '#lib/components/AddToTimeline.svelte';
+	import TimelineView from '#lib/components/TimelineView.svelte';
+	import type { Flight } from '#lib/server/db/schema.ts';
 	import Forecast from '#lib/components/Forecast.svelte';
 	import type { PageProps } from './$types';
 
@@ -10,6 +12,65 @@
 	const loadsFor = (flightId: string) => data.loads.filter((l) => l.flightId === flightId);
 	const time = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
 </script>
+
+{#snippet remove(action: string, name: string, id: string, what: string)}
+	<form method="POST" {action} use:enhance class="mt-1 text-right">
+		<input type="hidden" {name} value={id} />
+		<button
+			class="text-xs text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+			>Remove {what}</button
+		>
+	</form>
+{/snippet}
+
+{#snippet standby(f: Flight)}
+	{#if f.standby}
+		{@const loads = loadsFor(f.id)}
+		<div class="mt-3 space-y-2 border-t border-slate-100 pt-3 dark:border-slate-700">
+			{#if loads.length > 0}
+				<ul class="space-y-1 text-sm">
+					{#each loads as l (l.id)}
+						<li class="flex flex-wrap gap-x-3">
+							<span class="text-slate-400 dark:text-slate-500">{time(l.recordedAt)}</span>
+							<span class="capitalize">{l.cabin}</span>
+							<span class="font-medium">{l.seatsAvailable} open</span>
+							{#if l.standbyListed !== null}<span>{l.standbyListed} listed</span>{/if}
+							{#if l.note}<span class="text-slate-500 dark:text-slate-400">{l.note}</span>{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			<form
+				method="POST"
+				action="?/logLoad"
+				use:enhance
+				class="flex flex-wrap items-end gap-2 text-sm"
+			>
+				<input type="hidden" name="flightId" value={f.id} />
+				<select name="cabin" aria-label="Cabin">
+					<option value="economy">Economy</option>
+					<option value="premium">Premium</option>
+					<option value="business">Business</option>
+					<option value="first">First</option>
+				</select>
+				<input
+					name="seatsAvailable"
+					type="number"
+					min="0"
+					required
+					placeholder="Open seats"
+					class="w-28"
+				/>
+				<input name="standbyListed" type="number" min="0" placeholder="Listed" class="w-24" />
+				<input name="note" placeholder="Note" class="min-w-0 flex-1" />
+				<button class="rounded-lg bg-amber-500 px-3 py-2 font-medium text-white">Log load</button>
+				{#if form?.loadError && form.flightId === f.id}
+					<p class="w-full text-red-600 dark:text-red-400">{form.loadError}</p>
+				{/if}
+			</form>
+		</div>
+	{/if}
+{/snippet}
 
 <svelte:head>
 	<title>{data.trip.title} · Jumpseat</title>
@@ -34,97 +95,22 @@
 	</p>
 {/if}
 
-<section class="space-y-3 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
-	<h2 class="text-lg font-semibold">Flights</h2>
-	{#if data.flights.length === 0}
-		<p class="text-sm text-slate-500 dark:text-slate-400">No flights yet.</p>
-	{/if}
-	<ul class="space-y-2">
-		{#each data.flights as f (f.id)}
-			<FlightCard flight={f}>
-				{#if f.standby}
-					{@const loads = loadsFor(f.id)}
-					<div class="mt-3 space-y-2 border-t border-slate-100 pt-3 dark:border-slate-700">
-						{#if loads.length > 0}
-							<ul class="space-y-1 text-sm">
-								{#each loads as l (l.id)}
-									<li class="flex flex-wrap gap-x-3">
-										<span class="text-slate-400 dark:text-slate-500">{time(l.recordedAt)}</span>
-										<span class="capitalize">{l.cabin}</span>
-										<span class="font-medium">{l.seatsAvailable} open</span>
-										{#if l.standbyListed !== null}<span>{l.standbyListed} listed</span>{/if}
-										{#if l.note}<span class="text-slate-500 dark:text-slate-400">{l.note}</span
-											>{/if}
-									</li>
-								{/each}
-							</ul>
-						{/if}
-						<form
-							method="POST"
-							action="?/logLoad"
-							use:enhance
-							class="flex flex-wrap items-end gap-2 text-sm"
-						>
-							<input type="hidden" name="flightId" value={f.id} />
-							<select name="cabin" aria-label="Cabin">
-								<option value="economy">Economy</option>
-								<option value="premium">Premium</option>
-								<option value="business">Business</option>
-								<option value="first">First</option>
-							</select>
-							<input
-								name="seatsAvailable"
-								type="number"
-								min="0"
-								required
-								placeholder="Open seats"
-								class="w-28"
-							/>
-							<input name="standbyListed" type="number" min="0" placeholder="Listed" class="w-24" />
-							<input name="note" placeholder="Note" class="min-w-0 flex-1" />
-							<button class="rounded-lg bg-amber-500 px-3 py-2 font-medium text-white">
-								Log load
-							</button>
-							{#if form?.loadError && form.flightId === f.id}
-								<p class="w-full text-red-600 dark:text-red-400">{form.loadError}</p>
-							{/if}
-						</form>
-					</div>
-				{/if}
-				<form method="POST" action="?/deleteFlight" use:enhance class="mt-2 text-right">
-					<input type="hidden" name="flightId" value={f.id} />
-					<button
-						class="text-xs text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
-						>Remove flight</button
-					>
-				</form>
-			</FlightCard>
-		{/each}
-	</ul>
-
-	<form
-		method="POST"
-		action="?/addFlight"
-		use:enhance
-		class="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 text-sm sm:grid-cols-6 dark:border-slate-700"
-	>
-		<input name="flightNumber" required placeholder="LH400" aria-label="Flight number" />
-		<input name="origin" required maxlength="4" placeholder="FRA" aria-label="From" />
-		<input name="destination" required maxlength="4" placeholder="JFK" aria-label="To" />
-		<input name="departureDate" type="date" required aria-label="Date" />
-		<input name="departureTime" type="time" aria-label="Departure time" />
-		<label class="flex items-center gap-2">
-			<input type="checkbox" name="standby" checked /> Standby
-		</label>
-		{#if form?.flightError}
-			<p class="col-span-full text-red-600 dark:text-red-400">{form.flightError}</p>
-		{/if}
-		<button
-			class="col-span-full rounded-lg bg-blue-900 px-4 py-2 font-medium text-white hover:bg-blue-800"
-		>
-			Add flight
-		</button>
-	</form>
+<section class="space-y-4 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+	<h2 class="text-lg font-semibold">Timeline</h2>
+	<TimelineView timeline={data.timeline}>
+		{#snippet extra(entry)}
+			{#if entry.type === 'flight'}
+				{@render standby(entry.flight)}
+				{@render remove('?/deleteFlight', 'flightId', entry.flight.id, 'flight')}
+			{:else if entry.phase !== 'end'}
+				{@render remove('?/deleteItem', 'itemId', entry.item.id, 'entry')}
+			{/if}
+		{/snippet}
+		{#snippet itemExtra(item)}
+			{@render remove('?/deleteItem', 'itemId', item.id, 'entry')}
+		{/snippet}
+	</TimelineView>
+	<AddToTimeline error={form?.itemError ?? form?.flightError} />
 </section>
 
 <section class="space-y-3 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">

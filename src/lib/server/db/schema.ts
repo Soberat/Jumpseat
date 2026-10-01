@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { TIMELINE_KINDS, TRANSPORT_MODES } from '../../timeline.ts';
 
 const id = () =>
 	text('id')
@@ -68,3 +69,33 @@ export const shareLink = sqliteTable('share_link', {
 export type Trip = typeof trip.$inferSelect;
 export type Flight = typeof flight.$inferSelect;
 export type StandbyLoad = typeof standbyLoad.$inferSelect;
+
+/** Anything on a trip's timeline that isn't a flight: stays, car rentals, transfers, restaurants. */
+export const timelineItem = sqliteTable('timeline_item', {
+	id: id(),
+	tripId: text('trip_id')
+		.notNull()
+		.references(() => trip.id, { onDelete: 'cascade' }),
+	kind: text('kind', { enum: TIMELINE_KINDS }).notNull(),
+	title: text('title').notNull(),
+	// 'idea' for things you're considering (a restaurant someone recommended), 'booked' once confirmed.
+	status: text('status', { enum: ['idea', 'booked'] })
+		.notNull()
+		.default('booked'),
+	startDate: text('start_date'),
+	startTime: text('start_time'),
+	// Stays and car rentals span days: check-out / drop-off.
+	endDate: text('end_date'),
+	endTime: text('end_time'),
+	location: text('location'),
+	// Transport only.
+	mode: text('mode', { enum: TRANSPORT_MODES }),
+	fromPlace: text('from_place'),
+	toPlace: text('to_place'),
+	reference: text('reference'),
+	url: text('url'),
+	notes: text('notes'),
+	createdAt: createdAt()
+});
+
+export type TimelineItem = typeof timelineItem.$inferSelect;

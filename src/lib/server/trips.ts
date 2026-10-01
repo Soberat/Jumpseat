@@ -1,8 +1,8 @@
 import { asc, desc, eq, inArray } from 'drizzle-orm';
 import { db } from './db/index.ts';
-import { flight, standbyLoad, trip } from './db/schema.ts';
+import { flight, standbyLoad, timelineItem, trip } from './db/schema.ts';
 
-export async function getTripWithFlights(id: string) {
+export async function getTripPlan(id: string) {
 	const [found] = await db.select().from(trip).where(eq(trip.id, id));
 	if (!found) return null;
 	const flights = await db
@@ -10,7 +10,12 @@ export async function getTripWithFlights(id: string) {
 		.from(flight)
 		.where(eq(flight.tripId, id))
 		.orderBy(asc(flight.departureDate), asc(flight.departureTime));
-	return { trip: found, flights };
+	const items = await db
+		.select()
+		.from(timelineItem)
+		.where(eq(timelineItem.tripId, id))
+		.orderBy(asc(timelineItem.createdAt));
+	return { trip: found, flights, items };
 }
 
 export async function getLoadsForFlights(flightIds: string[]) {

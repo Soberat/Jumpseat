@@ -1,0 +1,20 @@
+CREATE TABLE `timeline_item` (
+	`id` text PRIMARY KEY NOT NULL,
+	`trip_id` text NOT NULL,
+	`kind` text NOT NULL,
+	`title` text NOT NULL,
+	`status` text DEFAULT 'booked' NOT NULL,
+	`start_date` text,
+	`start_time` text,
+	`end_date` text,
+	`end_time` text,
+	`location` text,
+	`mode` text,
+	`from_place` text,
+	`to_place` text,
+	`reference` text,
+	`url` text,
+	`notes` text,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	FOREIGN KEY (`trip_id`) REFERENCES `trip`(`id`) ON UPDATE no action ON DELETE cascade
+);

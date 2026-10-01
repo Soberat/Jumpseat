@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { placeAndDates } from '#lib/format.ts';
-	import FlightCard from '#lib/components/FlightCard.svelte';
+	import TimelineView from '#lib/components/TimelineView.svelte';
 	import Forecast from '#lib/components/Forecast.svelte';
 	import type { PageProps } from './$types';
 
@@ -24,13 +24,7 @@
 	<Forecast days={data.forecast} place={data.trip.destination} />
 {/if}
 
-{#if data.flights.length > 0}
-	<section class="space-y-3 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
-		<h2 class="text-lg font-semibold">Flights</h2>
-		<ul class="space-y-2">
-			{#each data.flights as f (f.id)}
-				<FlightCard flight={f} />
-			{/each}
-		</ul>
-	</section>
-{/if}
+<section class="space-y-4 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+	<h2 class="text-lg font-semibold">Timeline</h2>
+	<TimelineView timeline={data.timeline} />
+</section>
