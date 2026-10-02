@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { distanceKm } from '#lib/route.ts';
-import { getNearbySights, searchRings } from './wikipedia.ts';
+import { getNearbySights, searchRings, timing } from './wikipedia.ts';
+
+timing.pause = 0;
+timing.retryAfter = 0;
 
 const page = (pageid: number, title: string, views?: number) => ({
 	pageid,

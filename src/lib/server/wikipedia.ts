@@ -4,6 +4,9 @@ const TIMEOUT_MS = 5000;
 // Sights don't move; refresh weekly so page-view rankings stay roughly current.
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RETRY_MS = 10 * 60 * 1000;
+/** Overridable so tests don't wait. */
+export const timing = { pause: 250, retryAfter: 2000 };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pending = new Map<string, Promise<Sight[]>>();
 const cache = new Map<string, { expires: number; sights: Sight[] }>();
 /**
@@ -66,7 +69,13 @@ async function geosearch(lat: number, lon: number, fetcher: typeof fetch): Promi
 			headers: { 'user-agent': 'Jumpseat/1.0 (self-hosted travel planner)' }
 		});
 		if (!res.ok) throw new Error(`Wikipedia answered ${res.status}`);
-		const body = (await res.json()) as { continue?: Record<string, string> };
+		const text = await res.text();
+		let body: { continue?: Record<string, string> };
+		try {
+			body = JSON.parse(text);
+		} catch {
+			throw new Error(`Wikipedia answered: ${text.slice(0, 80)}`);
+		}
 		bodies.push(body);
 		more = body.continue;
 	}
@@ -110,10 +119,19 @@ async function search(
 	for (const ring of searchRings(latitude, longitude)) {
 		if (ring.length > 6 && parseSights(bodies, ENOUGH, place).length >= ENOUGH) break;
 		for (const p of ring) {
-			try {
-				bodies.push(...(await geosearch(p.lat, p.lon, fetcher)));
-			} catch {
-				failed++;
+			// Wikipedia turns away quick bursts: a short pause between searches, and one
+			// more try after a longer one.
+			for (const [attempt, delay] of [timing.pause, timing.retryAfter].entries()) {
+				await sleep(delay);
+				try {
+					bodies.push(...(await geosearch(p.lat, p.lon, fetcher)));
+					break;
+				} catch (err) {
+					if (attempt === 1) {
+						failed++;
+						console.warn(`Sights search near ${place} failed:`, (err as Error).message);
+					}
+				}
 			}
 		}
 	}
