@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { placeAndDates } from './format';
+import { placeAndWhen } from './format';
 
-describe('placeAndDates', () => {
-	it('joins the place with whatever dates exist', () => {
-		expect(placeAndDates('Lisbon', null, null)).toBe('Lisbon');
-		expect(placeAndDates('Lisbon', '2026-10-10', null)).toBe('Lisbon · 2026-10-10');
-		expect(placeAndDates('Lisbon', '2026-10-10', '2026-10-14')).toBe(
-			'Lisbon · 2026-10-10 – 2026-10-14'
+describe('placeAndWhen', () => {
+	it('joins the place with a description of when', () => {
+		expect(
+			placeAndWhen('Lisbon', {
+				startDate: '2026-10-03',
+				endDate: '2026-10-07',
+				plannedPeriod: null
+			})
+		).toBe('Lisbon · 3 – 7 Oct 2026');
+		expect(placeAndWhen('Oslo', { startDate: null, endDate: null, plannedPeriod: null })).toBe(
+			'Oslo · Dates not set'
 		);
 	});
 });

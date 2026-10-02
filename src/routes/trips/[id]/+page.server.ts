@@ -4,7 +4,8 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import { PUBLIC_ORIGIN } from '$app/env/private';
 import { db } from '#lib/server/db/index.ts';
 import { flight, shareLink, standbyLoad, timelineItem, trip } from '#lib/server/db/schema.ts';
-import { geocode, getForecast } from '#lib/server/open-meteo.ts';
+import { geocode, getTripWeather } from '#lib/server/open-meteo.ts';
+import { parseWhen, whenWindow } from '#lib/when.ts';
 import { field, getLoadsForFlights, getTripPlan, optionalField } from '#lib/server/trips.ts';
 import {
 	buildTimeline,
@@ -36,7 +37,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		}
 	}
 
-	const [loads, shares, forecast] = await Promise.all([
+	const [loads, shares, weather] = await Promise.all([
 		getLoadsForFlights(found.flights.map((f) => f.id)),
 		db
 			.select()
@@ -44,7 +45,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			.where(and(eq(shareLink.tripId, params.id), isNull(shareLink.revokedAt)))
 			.orderBy(desc(shareLink.createdAt)),
 		found.trip.latitude !== null && found.trip.longitude !== null
-			? getForecast(found.trip.latitude, found.trip.longitude)
+			? getTripWeather(found.trip.latitude, found.trip.longitude, whenWindow(found.trip))
 			: Promise.resolve(null)
 	]);
 
@@ -53,12 +54,43 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		trip: found.trip,
 		timeline: buildTimeline(found.flights, found.items),
 		loads,
-		forecast,
+		weather,
+		today: new Date().toISOString().slice(0, 10),
 		shares: shares.map((s) => ({ token: s.token, url: `${origin}/s/${s.token}` }))
 	};
 };
 
 export const actions: Actions = {
+	update: async ({ params, request }) => {
+		const data = await request.formData();
+		const title = field(data, 'title');
+		const destination = field(data, 'destination');
+		if (!title || !destination) {
+			return fail(400, { tripError: 'A trip needs a name and a destination.' });
+		}
+		const when = parseWhen(data);
+		if ('error' in when) return fail(400, { tripError: when.error });
+
+		const [current] = await db.select().from(trip).where(eq(trip.id, params.id));
+		if (!current) error(404, 'Trip not found');
+
+		// A new destination needs new coordinates; if the lookup fails, the page retries later.
+		let coords = {};
+		if (destination !== current.destination) {
+			const place = await geocode(destination).catch(() => null);
+			coords = {
+				latitude: place?.latitude ?? null,
+				longitude: place?.longitude ?? null,
+				timezone: place?.timezone ?? null
+			};
+		}
+		await db
+			.update(trip)
+			.set({ title, destination, ...when, ...coords })
+			.where(eq(trip.id, params.id));
+		return { tripSaved: true };
+	},
+
 	addFlight: async ({ params, request }) => {
 		const data = await request.formData();
 		const flightNumber = field(data, 'flightNumber').toUpperCase().replace(/\s+/g, '');

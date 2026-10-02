@@ -15,6 +15,13 @@
       "when": 1790886235753,
       "tag": "0001_timeline",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790951749543,
+      "tag": "0002_planned_period",
+      "breakpoints": true
     }
   ]
 }

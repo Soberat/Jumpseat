@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { placeAndDates } from '#lib/format.ts';
+	import { placeAndWhen } from '#lib/format.ts';
+	import TripWhenFields from '#lib/components/TripWhenFields.svelte';
 	import { enhance } from '$app/forms';
 	import type { PageProps } from './$types';
 
@@ -24,7 +25,7 @@
 					>
 						<div class="font-semibold">{t.title}</div>
 						<div class="text-sm text-slate-500 dark:text-slate-400">
-							{placeAndDates(t.destination, t.startDate, t.endDate)}
+							{placeAndWhen(t.destination, t)}
 						</div>
 					</a>
 				</li>
@@ -44,14 +45,7 @@
 			Destination
 			<input name="destination" required value={form?.destination ?? ''} placeholder="Lisbon" />
 		</label>
-		<label class="flex flex-col gap-1 text-sm">
-			From
-			<input type="date" name="startDate" />
-		</label>
-		<label class="flex flex-col gap-1 text-sm">
-			To
-			<input type="date" name="endDate" />
-		</label>
+		<TripWhenFields today={data.today} />
 		{#if form?.error}
 			<p class="text-sm text-red-600 sm:col-span-2 dark:text-red-400">{form.error}</p>
 		{/if}

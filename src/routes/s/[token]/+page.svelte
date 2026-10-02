@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { placeAndDates } from '#lib/format.ts';
+	import { placeAndWhen } from '#lib/format.ts';
 	import TimelineView from '#lib/components/TimelineView.svelte';
-	import Forecast from '#lib/components/Forecast.svelte';
+	import Weather from '#lib/components/Weather.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -16,12 +16,12 @@
 	<p class="text-xs tracking-wide text-slate-400 uppercase dark:text-slate-500">Shared trip</p>
 	<h1 class="mt-1 text-2xl font-bold">{data.trip.title}</h1>
 	<p class="text-slate-500 dark:text-slate-400">
-		{placeAndDates(data.trip.destination, data.trip.startDate, data.trip.endDate)}
+		{placeAndWhen(data.trip.destination, data.trip)}
 	</p>
 </div>
 
-{#if data.trip.hasLocation}
-	<Forecast days={data.forecast} place={data.trip.destination} />
+{#if data.weather}
+	<Weather weather={data.weather} place={data.trip.destination} />
 {/if}
 
 <section class="space-y-4 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">

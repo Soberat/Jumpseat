@@ -22,6 +22,8 @@ export const trip = sqliteTable('trip', {
 	timezone: text('timezone'),
 	startDate: text('start_date'),
 	endDate: text('end_date'),
+	// When the dates aren't fixed yet: a month ("2027-04") or a quarter ("2027-Q2").
+	plannedPeriod: text('planned_period'),
 	notes: text('notes'),
 	createdAt: createdAt()
 });

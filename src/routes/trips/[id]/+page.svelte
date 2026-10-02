@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { placeAndDates } from '#lib/format.ts';
+	import { placeAndWhen } from '#lib/format.ts';
 	import { enhance } from '$app/forms';
 	import AddToTimeline from '#lib/components/AddToTimeline.svelte';
 	import TimelineView from '#lib/components/TimelineView.svelte';
 	import type { Flight } from '#lib/server/db/schema.ts';
-	import Forecast from '#lib/components/Forecast.svelte';
+	import TripWhenFields from '#lib/components/TripWhenFields.svelte';
+	import Weather from '#lib/components/Weather.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -80,12 +81,44 @@
 	<a href="/" class="text-sm text-blue-900 hover:underline dark:text-blue-300">← All trips</a>
 	<h1 class="mt-1 text-2xl font-bold">{data.trip.title}</h1>
 	<p class="text-slate-500 dark:text-slate-400">
-		{placeAndDates(data.trip.destination, data.trip.startDate, data.trip.endDate)}
+		{placeAndWhen(data.trip.destination, data.trip)}
 	</p>
 </div>
 
-{#if data.trip.latitude !== null}
-	<Forecast days={data.forecast} place={data.trip.destination} />
+<details class="rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800" open={!!form?.tripError}>
+	<summary class="cursor-pointer font-semibold">Edit trip</summary>
+	<form
+		method="POST"
+		action="?/update"
+		use:enhance={() =>
+			async ({ update }) =>
+				update({ reset: false })}
+		class="mt-3 grid gap-3 sm:grid-cols-2"
+	>
+		<label class="flex flex-col gap-1 text-sm">
+			Name
+			<input name="title" required value={data.trip.title} />
+		</label>
+		<label class="flex flex-col gap-1 text-sm">
+			Destination
+			<input name="destination" required value={data.trip.destination} />
+		</label>
+		{#key data.trip}
+			<TripWhenFields when={data.trip} today={data.today} />
+		{/key}
+		{#if form?.tripError}
+			<p class="text-sm text-red-600 sm:col-span-2 dark:text-red-400">{form.tripError}</p>
+		{/if}
+		<button
+			class="rounded-lg bg-blue-900 px-4 py-2 font-medium text-white hover:bg-blue-800 sm:col-span-2"
+		>
+			Save
+		</button>
+	</form>
+</details>
+
+{#if data.trip.latitude !== null && data.weather}
+	<Weather weather={data.weather} place={data.trip.destination} />
 {:else}
 	<p
 		class="rounded-xl bg-white p-4 text-sm text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400"

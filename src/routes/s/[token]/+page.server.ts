@@ -2,7 +2,8 @@ import { error } from '@sveltejs/kit';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '#lib/server/db/index.ts';
 import { shareLink } from '#lib/server/db/schema.ts';
-import { getForecast } from '#lib/server/open-meteo.ts';
+import { getTripWeather } from '#lib/server/open-meteo.ts';
+import { whenWindow } from '#lib/when.ts';
 import { getTripPlan } from '#lib/server/trips.ts';
 import { buildTimeline } from '#lib/timeline.ts';
 import type { PageServerLoad } from './$types';
@@ -20,9 +21,9 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 	setHeaders({ 'x-robots-tag': 'noindex', 'cache-control': 'private, no-store' });
 
 	const { trip } = found;
-	const forecast =
+	const weather =
 		trip.latitude !== null && trip.longitude !== null
-			? await getForecast(trip.latitude, trip.longitude)
+			? await getTripWeather(trip.latitude, trip.longitude, whenWindow(trip))
 			: null;
 
 	// Only what a guest should see: no notes, booking references or standby loads.
@@ -33,9 +34,10 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 			destination: trip.destination,
 			startDate: trip.startDate,
 			endDate: trip.endDate,
+			plannedPeriod: trip.plannedPeriod,
 			hasLocation: trip.latitude !== null
 		},
 		timeline: buildTimeline(found.flights, items),
-		forecast
+		weather
 	};
 };

@@ -1,0 +1,1 @@
+ALTER TABLE `trip` ADD `planned_period` text;
