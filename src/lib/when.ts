@@ -34,19 +34,29 @@ export function whenWindow(when: TripWhen): WhenWindow {
 	return { type: 'none' };
 }
 
-const monthName = (month: string, style: 'long' | 'short' = 'long') =>
-	new Date(`${month}-15T12:00:00Z`).toLocaleDateString('en-GB', {
-		month: style,
-		timeZone: 'UTC'
-	});
+const MONTHS = [
+	'January',
+	'February',
+	'March',
+	'April',
+	'May',
+	'June',
+	'July',
+	'August',
+	'September',
+	'October',
+	'November',
+	'December'
+];
+
+const monthName = (month: string, style: 'long' | 'short' = 'long') => {
+	const name = MONTHS[Number(month.slice(5, 7)) - 1];
+	return style === 'long' ? name : name.slice(0, 3);
+};
 
 function formatDate(date: string, withYear: boolean): string {
-	return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', {
-		day: 'numeric',
-		month: 'short',
-		...(withYear ? { year: 'numeric' } : {}),
-		timeZone: 'UTC'
-	});
+	const text = `${Number(date.slice(8, 10))} ${monthName(date.slice(0, 7), 'short')}`;
+	return withYear ? `${text} ${date.slice(0, 4)}` : text;
 }
 
 /** "3 – 7 Oct 2026", "April 2027", "Q2 2027 (Apr – Jun)", or "Dates not set". */

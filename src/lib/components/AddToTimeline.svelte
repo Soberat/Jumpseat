@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import DateRangePicker from './DateRangePicker.svelte';
 	import { KIND_LABELS, MODE_LABELS, TIMELINE_KINDS, TRANSPORT_MODES } from '#lib/timeline.ts';
 
-	let { error }: { error?: string } = $props();
+	let { error, today, tripStart }: { error?: string; today: string; tripStart?: string | null } =
+		$props();
 
 	type Choice = 'flight' | (typeof TIMELINE_KINDS)[number];
 	const CHOICES: Choice[] = ['flight', ...TIMELINE_KINDS];
@@ -102,22 +104,26 @@
 				</label>
 			{/if}
 
-			<label class="flex flex-col gap-1">
-				{startLabel}
-				<input type="date" name="startDate" />
-			</label>
-			<label class="flex flex-col gap-1">
-				Time
-				<input type="time" name="startTime" />
-			</label>
 			{#if spans}
+				<div class="col-span-full">
+					<DateRangePicker {today} openAt={tripStart} {startLabel} {endLabel} />
+				</div>
 				<label class="flex flex-col gap-1">
-					{endLabel}
-					<input type="date" name="endDate" />
+					{startLabel} time
+					<input type="time" name="startTime" />
+				</label>
+				<label class="flex flex-col gap-1">
+					{endLabel} time
+					<input type="time" name="endTime" />
+				</label>
+			{:else}
+				<label class="flex flex-col gap-1">
+					{startLabel}
+					<input type="date" name="startDate" />
 				</label>
 				<label class="flex flex-col gap-1">
 					Time
-					<input type="time" name="endTime" />
+					<input type="time" name="startTime" />
 				</label>
 			{/if}
 

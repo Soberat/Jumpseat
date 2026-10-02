@@ -143,7 +143,11 @@
 			{@render remove('?/deleteItem', 'itemId', item.id, 'entry')}
 		{/snippet}
 	</TimelineView>
-	<AddToTimeline error={form?.itemError ?? form?.flightError} />
+	<AddToTimeline
+		error={form?.itemError ?? form?.flightError}
+		today={data.today}
+		tripStart={data.trip.startDate}
+	/>
 </section>
 
 <section class="space-y-3 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
