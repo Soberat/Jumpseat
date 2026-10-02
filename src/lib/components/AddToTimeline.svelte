@@ -3,20 +3,27 @@
 	import { enhance } from '$app/forms';
 	import { normaliseFlightNumber, priceLinks, type FlightInfo } from '#lib/flight-info.ts';
 	import DateRangePicker from './DateRangePicker.svelte';
+	import CostFields from './CostFields.svelte';
 	import { KIND_LABELS, MODE_LABELS, TIMELINE_KINDS, TRANSPORT_MODES } from '#lib/timeline.ts';
 
 	let {
 		error,
 		today,
 		tripStart,
-		lookup = false
+		lookup = false,
+		currency
 	}: {
 		error?: string;
 		today: string;
 		tripStart?: string | null;
 		/** Flight lookup by number is set up on the server. */
 		lookup?: boolean;
+		/** Default for the cost fields: the last one used on this trip. */
+		currency?: string;
 	} = $props();
+
+	// Bumped after each successful add, so the cost fields start empty again.
+	let added = $state(0);
 
 	// Flight form, filled by hand or from a schedule lookup.
 	let flightNumber = $state('');
@@ -138,6 +145,7 @@
 						arrival = { date: null, time: null, minutes: null };
 						found = [];
 						lookupNote = null;
+						added++;
 					}
 				}}
 			class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-6"
@@ -194,6 +202,7 @@
 			<label class="flex items-center gap-2">
 				<input type="checkbox" name="standby" checked /> Standby
 			</label>
+			{#key added}<CostFields {currency} />{/key}
 			{#if lookupNote}
 				<p class="col-span-full text-sm text-slate-600 dark:text-slate-300">{lookupNote}</p>
 			{/if}
@@ -232,7 +241,16 @@
 			</button>
 		</form>
 	{:else}
-		<form method="POST" action="?/addItem" use:enhance class="grid grid-cols-2 gap-2 text-sm">
+		<form
+			method="POST"
+			action="?/addItem"
+			use:enhance={() =>
+				async ({ update, result }) => {
+					await update();
+					if (result.type === 'success') added++;
+				}}
+			class="grid grid-cols-2 gap-2 text-sm"
+		>
 			<input type="hidden" name="kind" value={kind} />
 			<label class="col-span-full flex flex-col gap-1">
 				Name
@@ -294,6 +312,7 @@
 			<label class="flex flex-col gap-1">
 				Link <input name="url" type="url" placeholder="https://" />
 			</label>
+			{#key added}<CostFields {currency} />{/key}
 			<label class="col-span-full flex flex-col gap-1">
 				Notes <textarea name="notes" rows="2"></textarea>
 			</label>

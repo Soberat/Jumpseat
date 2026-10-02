@@ -13,6 +13,10 @@ const flight = (id: string, date: string, time: string | null): Flight => ({
 	arrivalDate: null,
 	arrivalTime: null,
 	durationMinutes: null,
+	costMinor: null,
+	costCurrency: null,
+	paymentStatus: null,
+	dueDate: null,
 	standby: true,
 	createdAt: new Date(0)
 });
@@ -36,6 +40,10 @@ const item = (id: string, extra: Partial<TimelineItem>): TimelineItem => ({
 	notes: null,
 	day: null,
 	durationMinutes: null,
+	costMinor: null,
+	costCurrency: null,
+	paymentStatus: null,
+	dueDate: null,
 	createdAt: new Date(0),
 	...extra
 });

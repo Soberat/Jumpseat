@@ -22,6 +22,7 @@ import { buildGantt } from '#lib/gantt.ts';
 import { scheduleTrip } from '#lib/schedule.ts';
 import { parseDuration } from '#lib/duration.ts';
 import { flightLookupEnabled } from '#lib/server/flight-lookup.ts';
+import { NO_COST, parseCost, summariseCosts } from '#lib/cost.ts';
 import {
 	buildTimeline,
 	TIMELINE_KINDS,
@@ -98,7 +99,22 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			canEdit: s.canEdit,
 			url: `${origin}/s/${s.token}`
 		})),
-		flightLookup: flightLookupEnabled()
+		flightLookup: flightLookupEnabled(),
+		bookings: summariseCosts(
+			[
+				...found.flights.map((f) => ({
+					...f,
+					label: `${f.flightNumber} ${f.origin}→${f.destination}`
+				})),
+				...found.items.filter((i) => i.status === 'booked').map((i) => ({ ...i, label: i.title }))
+			],
+			new Date().toISOString().slice(0, 10)
+		),
+		// Most bookings on a trip are in one currency: offer the last one used.
+		lastCurrency:
+			[...found.flights, ...found.items]
+				.filter((x) => x.costCurrency)
+				.sort((a, b) => +b.createdAt - +a.createdAt)[0]?.costCurrency ?? undefined
 	};
 };
 
@@ -144,7 +160,10 @@ export const actions: Actions = {
 		if (!flightNumber || !origin || !destination || !departureDate) {
 			return fail(400, { flightError: 'Flight number, route and date are required.' });
 		}
+		const cost = parseCost(data);
+		if ('error' in cost) return fail(400, { flightError: cost.error });
 		await db.insert(flight).values({
+			...cost,
 			tripId: params.id,
 			flightNumber,
 			origin,
@@ -183,8 +202,11 @@ export const actions: Actions = {
 		if (url && !/^https?:\/\//i.test(url)) {
 			return fail(400, { itemError: 'Links must start with http:// or https://.' });
 		}
+		const cost = parseCost(data);
+		if ('error' in cost) return fail(400, { itemError: cost.error });
 
 		await db.insert(timelineItem).values({
+			...cost,
 			tripId: params.id,
 			kind,
 			title,
@@ -214,6 +236,22 @@ export const actions: Actions = {
 	deleteFlight: async ({ params, request }) => {
 		const id = field(await request.formData(), 'flightId');
 		await db.delete(flight).where(and(eq(flight.id, id), eq(flight.tripId, params.id)));
+	},
+
+	setCost: async ({ params, request }) => {
+		const data = await request.formData();
+		const id = field(data, 'id');
+		const cost = data.get('clear') ? NO_COST : parseCost(data);
+		if ('error' in cost) return fail(400, { costError: cost.error, costFor: id });
+		await saveCost(params.id, field(data, 'target'), id, cost);
+	},
+
+	markPaid: async ({ params, request }) => {
+		const data = await request.formData();
+		await saveCost(params.id, field(data, 'target'), field(data, 'id'), {
+			paymentStatus: 'paid',
+			dueDate: null
+		});
 	},
 
 	logLoad: async ({ params, request }) => {
@@ -331,3 +369,22 @@ export const actions: Actions = {
 		redirect(303, '/');
 	}
 };
+
+async function saveCost(
+	tripId: string,
+	target: string,
+	id: string,
+	cost: Partial<typeof NO_COST>
+): Promise<void> {
+	if (target === 'flight') {
+		await db
+			.update(flight)
+			.set(cost)
+			.where(and(eq(flight.id, id), eq(flight.tripId, tripId)));
+	} else {
+		await db
+			.update(timelineItem)
+			.set(cost)
+			.where(and(eq(timelineItem.id, id), eq(timelineItem.tripId, tripId)));
+	}
+}

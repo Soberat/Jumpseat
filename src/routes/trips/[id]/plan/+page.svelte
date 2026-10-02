@@ -9,6 +9,7 @@
 		BUDGET_LABELS,
 		BUDGET_LEVELS,
 		MAX_PLAN_DAYS,
+		planParts,
 		TRIP_STYLES,
 		type PlanItem
 	} from '#lib/plan.ts';
@@ -231,7 +232,9 @@
 			<p class="font-semibold">Drafting your {data.trip.destination} plan…</p>
 			<p class="text-sm text-slate-500 dark:text-slate-400">
 				{plan.request.days} days · {plan.request.styles.join(', ') || 'any style'} · {plan.request
-					.budgetLevel}. This usually takes a minute or two.
+					.budgetLevel}. {plan.request.days > 14
+					? `Long trips are drafted in ${planParts(plan.request.days).length} parts, so this takes several minutes.`
+					: 'This usually takes a minute or two.'}
 			</p>
 		</div>
 	</section>

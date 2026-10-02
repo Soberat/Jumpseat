@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { TIMELINE_KINDS, TRANSPORT_MODES } from '../../timeline.ts';
 import { EXPENSE_CATEGORIES } from '../../money.ts';
+import { PAYMENT_STATUSES } from '../../cost.ts';
 
 const id = () =>
 	text('id')
@@ -31,6 +32,15 @@ export const trip = sqliteTable('trip', {
 	createdAt: createdAt()
 });
 
+/** What a booking costs and whether it's paid yet; see #lib/cost.ts. */
+const costColumns = () => ({
+	costMinor: integer('cost_minor'),
+	costCurrency: text('cost_currency'),
+	paymentStatus: text('payment_status', { enum: PAYMENT_STATUSES }),
+	// When it has to be paid, for 'due'.
+	dueDate: text('due_date')
+});
+
 /** One flight segment of a trip, booked or flown standby. */
 export const flight = sqliteTable('flight', {
 	id: id(),
@@ -47,6 +57,7 @@ export const flight = sqliteTable('flight', {
 	arrivalTime: text('arrival_time'),
 	durationMinutes: integer('duration_minutes'),
 	standby: integer('standby', { mode: 'boolean' }).notNull().default(false),
+	...costColumns(),
 	createdAt: createdAt()
 });
 
@@ -110,6 +121,7 @@ export const timelineItem = sqliteTable('timeline_item', {
 	day: integer('day'),
 	// How long it takes, for things that happen within a day (a tour, dinner).
 	durationMinutes: integer('duration_minutes'),
+	...costColumns(),
 	createdAt: createdAt()
 });
 

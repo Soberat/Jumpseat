@@ -30,6 +30,10 @@ const item = (id: string, extra: Partial<TimelineItem>): TimelineItem => ({
 	notes: null,
 	day: null,
 	durationMinutes: null,
+	costMinor: null,
+	costCurrency: null,
+	paymentStatus: null,
+	dueDate: null,
 	createdAt: new Date(0),
 	...extra
 });

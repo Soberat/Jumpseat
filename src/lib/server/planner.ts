@@ -4,7 +4,14 @@ import { and, eq, lt } from 'drizzle-orm';
 import { ANTHROPIC_API_KEY } from '$app/env/private';
 import { db } from './db/index.ts';
 import { tripPlan, type Flight, type TimelineItem, type Trip } from './db/schema.ts';
-import { parsePlan, TripPlanSchema, type PlanRequest } from '#lib/plan.ts';
+import {
+	mergePlans,
+	parsePlan,
+	planParts,
+	TripPlanSchema,
+	type PlanRequest,
+	type TripPlan
+} from '#lib/plan.ts';
 import { describeWhen } from '#lib/when.ts';
 import { airportByCode } from '#lib/airports.ts';
 import { DEFAULT_HOME } from '#lib/trip-route.ts';
@@ -52,7 +59,9 @@ export function buildPrompt(
 	trip: Pick<Trip, 'destination' | 'startDate' | 'endDate' | 'plannedPeriod' | 'origin'>,
 	request: PlanRequest,
 	flights: Flight[],
-	items: TimelineItem[]
+	items: TimelineItem[],
+	/** For long trips drafted in parts: which days this call covers, and what's already planned. */
+	part?: { from: number; to: number; earlier: TripPlan[] }
 ): string {
 	const budget =
 		request.budgetAmount !== null
@@ -63,14 +72,47 @@ export function buildPrompt(
 Destination: ${trip.destination}
 Travelling from: ${startingPoint(trip.origin)}
 When: ${describeWhen(trip)}${trip.startDate ? ` (day 1 is ${trip.startDate})` : ''}
-Length: ${request.days} day${request.days === 1 ? '' : 's'}; return exactly this many days.
+Length: ${request.days} day${request.days === 1 ? '' : 's'}${part ? '' : '; return exactly this many days'}.
 Travellers: ${request.travellers}
 Styles: ${request.styles.length ? request.styles.join(', ') : 'no preference'}
 Budget: ${budget}
 Wishes: ${request.wishes || 'none given'}
 
 Already on the trip:
-${describeExisting(flights, items)}`;
+${describeExisting(flights, items)}${part ? describePart(request.days, part) : ''}`;
+}
+
+function describePart(
+	days: number,
+	part: { from: number; to: number; earlier: TripPlan[] }
+): string {
+	const span = part.to - part.from + 1;
+	const lines = [
+		'',
+		'',
+		`This trip is long, so it is planned in parts. Plan only days ${part.from} to ${part.to} now: return exactly ${span} days numbered ${part.from} to ${part.to}.`,
+		`The budget in your answer covers only these ${span} days (about ${Math.round((100 * span) / days)}% of the trip's budget).`
+	];
+	if (part.from === 1) {
+		lines.push(
+			'Write the summary, where to stay, tips and packing for the whole trip, not just these days.'
+		);
+	} else {
+		lines.push(
+			'Keep the summary and where-to-stay short; they come from the first part. Add only tips and packing items not covered yet.',
+			'Already planned in earlier parts (do not repeat these places; vary the days):',
+			...part.earlier.flatMap((p) =>
+				p.days.map(
+					(d) =>
+						`- Day ${d.day}: ${d.theme} (${d.items
+							.filter((i) => i.kind !== 'stay')
+							.map((i) => i.title)
+							.join('; ')})`
+				)
+			)
+		);
+	}
+	return lines.join('\n');
 }
 
 /** Calls Claude and stores the result on the plan row. Never throws. */
@@ -83,23 +125,13 @@ export async function generatePlan(
 ): Promise<void> {
 	try {
 		const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-		// Streaming keeps the long request alive; we only need the final message.
-		const stream = client.beta.messages.stream({
-			model: MODEL,
-			max_tokens: 32000,
-			// Re-run on a fallback model if a safety classifier declines.
-			betas: ['server-side-fallback-2026-07-01'],
-			fallbacks: 'default',
-			output_config: { effort: 'medium', format: zodOutputFormat(TripPlanSchema) },
-			system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
-			messages: [{ role: 'user', content: buildPrompt(trip, request, flights, items) }]
-		});
-		const message = await stream.finalMessage();
-
-		if (message.stop_reason === 'refusal') throw new Error('Claude declined to plan this trip.');
-		if (message.stop_reason === 'max_tokens') throw new Error('The plan came back cut off.');
-		const text = message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-		const plan = parsePlan(JSON.parse(text));
+		const parts = planParts(request.days);
+		const drafted: TripPlan[] = [];
+		for (const [from, to] of parts) {
+			const part = parts.length > 1 ? { from, to, earlier: drafted } : undefined;
+			drafted.push(await draft(client, buildPrompt(trip, request, flights, items, part)));
+		}
+		const plan = mergePlans(drafted);
 
 		await db
 			.update(tripPlan)
@@ -112,6 +144,26 @@ export async function generatePlan(
 			.set({ status: 'failed', error: friendlyError(err) })
 			.where(eq(tripPlan.id, planId));
 	}
+}
+
+async function draft(client: Anthropic, prompt: string): Promise<TripPlan> {
+	// Streaming keeps the long request alive; we only need the final message.
+	const stream = client.beta.messages.stream({
+		model: MODEL,
+		max_tokens: 32000,
+		// Re-run on a fallback model if a safety classifier declines.
+		betas: ['server-side-fallback-2026-07-01'],
+		fallbacks: 'default',
+		output_config: { effort: 'medium', format: zodOutputFormat(TripPlanSchema) },
+		system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+		messages: [{ role: 'user', content: prompt }]
+	});
+	const message = await stream.finalMessage();
+
+	if (message.stop_reason === 'refusal') throw new Error('Claude declined to plan this trip.');
+	if (message.stop_reason === 'max_tokens') throw new Error('The plan came back cut off.');
+	const text = message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
+	return parsePlan(JSON.parse(text));
 }
 
 function friendlyError(err: unknown): string {
@@ -128,7 +180,8 @@ function friendlyError(err: unknown): string {
 
 /** A server restart loses in-flight requests; don't leave those spinning forever. */
 export async function expireStalePlans(tripId: string): Promise<void> {
-	const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+	// Long trips are drafted in several parts, one after another.
+	const cutoff = new Date(Date.now() - 30 * 60 * 1000);
 	await db
 		.update(tripPlan)
 		.set({ status: 'failed', error: 'Drafting took too long. Try again.' })

@@ -6,21 +6,28 @@ import { field, getTripPlan, optionalField } from '#lib/server/trips.ts';
 import { getNearbySights } from '#lib/server/wikipedia.ts';
 import { scheduleTrip } from '#lib/schedule.ts';
 import { parseDuration } from '#lib/duration.ts';
+import { NO_COST } from '#lib/cost.ts';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
  * What the journey view needs. Guests (share links) never see booking
- * references; view-only guests don't see notes either.
+ * references or what things cost; view-only guests don't see notes either.
  */
 export async function journeyData(tripId: string, guest: 'view' | 'edit' | null = null) {
 	const found = await getTripPlan(tripId);
 	if (!found) error(404, 'Trip not found');
 	const items = guest
-		? found.items.map((i) => ({ ...i, reference: null, notes: guest === 'edit' ? i.notes : null }))
+		? found.items.map((i) => ({
+				...i,
+				...NO_COST,
+				reference: null,
+				notes: guest === 'edit' ? i.notes : null
+			}))
 		: found.items;
-	const schedule = scheduleTrip(found.trip, found.flights, items);
+	const flights = guest ? found.flights.map((f) => ({ ...f, ...NO_COST })) : found.flights;
+	const schedule = scheduleTrip(found.trip, flights, items);
 	// Without real dates, days are numbered and drops set the trip day instead.
 	const numbered = !schedule.start || schedule.undated;
 	const { latitude, longitude } = found.trip;
@@ -30,7 +37,7 @@ export async function journeyData(tripId: string, guest: 'view' | 'edit' | null 
 			title: found.trip.title,
 			endDate: found.trip.endDate
 		},
-		flights: found.flights,
+		flights,
 		items: numbered ? items : schedule.items,
 		start: numbered ? null : schedule.start,
 		numbered,

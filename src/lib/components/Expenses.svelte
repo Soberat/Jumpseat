@@ -9,13 +9,25 @@
 		totalsByCurrency
 	} from '#lib/money.ts';
 	import type { Expense } from '#lib/server/db/schema.ts';
+	import { formatNumericDate } from '#lib/format.ts';
+	import type { CostSummary } from '#lib/cost.ts';
 
 	let {
 		expenses,
 		today,
 		error,
-		lastCurrency
-	}: { expenses: Expense[]; today: string; error?: string; lastCurrency?: string } = $props();
+		lastCurrency,
+		bookings = null
+	}: {
+		expenses: Expense[];
+		today: string;
+		error?: string;
+		lastCurrency?: string;
+		/** Costs entered on flights, stays and the rest of the timeline. */
+		bookings?: CostSummary | null;
+	} = $props();
+	const sum = (t: { minor: number; currency: string }[]) =>
+		t.map((x) => formatMoney(x.minor, x.currency)).join(' + ');
 
 	const totals = $derived(totalsByCurrency(expenses));
 	// Default to what you used last on this trip; most trips are in one currency.
@@ -39,6 +51,40 @@
 			</span>
 		{/if}
 	</div>
+
+	{#if bookings}
+		<div class="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/60">
+			<p class="font-semibold">Bookings</p>
+			<p class="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+				{#if bookings.paid.length}
+					<span
+						>Paid <span class="font-medium text-emerald-700 tabular-nums dark:text-emerald-300"
+							>{sum(bookings.paid)}</span
+						></span
+					>
+				{/if}
+				{#if bookings.due.length}
+					<span
+						>To pay <span class="font-medium text-amber-700 tabular-nums dark:text-amber-300"
+							>{sum(bookings.due)}</span
+						></span
+					>
+				{/if}
+			</p>
+			{#if bookings.next}
+				<p class="mt-1 text-slate-600 dark:text-slate-300">
+					Next: {bookings.next.label}, {bookings.next.amount} by {formatNumericDate(
+						bookings.next.date
+					)}
+				</p>
+			{/if}
+			{#if bookings.overdue}
+				<p class="mt-1 font-medium text-red-700 dark:text-red-300">
+					{bookings.overdue} payment{bookings.overdue === 1 ? ' is' : 's are'} past the due date.
+				</p>
+			{/if}
+		</div>
+	{/if}
 
 	{#if byCategory.length > 1}
 		<ul class="flex flex-wrap gap-2 text-sm">
@@ -95,7 +141,7 @@
 			name="amount"
 			required
 			inputmode="decimal"
-			placeholder="0.00"
+			placeholder="0,00"
 			aria-label="Amount"
 			class="col-span-3 sm:col-span-2"
 		/>

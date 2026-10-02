@@ -3,10 +3,12 @@
 	import { onMount } from 'svelte';
 	import { priceLinks } from '#lib/flight-info.ts';
 	import { formatDuration } from '#lib/duration.ts';
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import AddToTimeline from '#lib/components/AddToTimeline.svelte';
 	import TimelineView from '#lib/components/TimelineView.svelte';
-	import type { Flight } from '#lib/server/db/schema.ts';
+	import type { Flight, TimelineItem } from '#lib/server/db/schema.ts';
+	import CostFields from '#lib/components/CostFields.svelte';
+	import { describeCost, type CostTone } from '#lib/cost.ts';
 	import TripWhenFields from '#lib/components/TripWhenFields.svelte';
 	import Weather from '#lib/components/Weather.svelte';
 	import PackingList from '#lib/components/PackingList.svelte';
@@ -48,6 +50,18 @@
 		unlikely: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
 	};
 	const time = (d: Date) => formatStamp(d);
+	const COST_TONES: Record<CostTone, string> = {
+		paid: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+		due: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+		overdue: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
+	};
+	// Close the cost editor once it has saved.
+	const closeOnSave: SubmitFunction =
+		({ formElement }) =>
+		async ({ update, result }) => {
+			await update({ reset: false });
+			if (result.type === 'success') formElement.closest('details')?.removeAttribute('open');
+		};
 </script>
 
 {#snippet remove(action: string, name: string, id: string, what: string)}
@@ -77,6 +91,55 @@
 			>Skyscanner</a
 		>
 	</p>
+{/snippet}
+
+{#snippet cost(target: 'flight' | 'item', x: Flight | TimelineItem)}
+	{@const c = describeCost(x, data.today)}
+	<div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+		{#if c}
+			<span class="font-medium tabular-nums">💳 {c.amount}</span>
+			<span class={['rounded px-2 py-0.5 text-xs font-medium', COST_TONES[c.tone]]}>{c.status}</span
+			>
+			{#if c.tone !== 'paid'}
+				<form method="POST" action="?/markPaid" use:enhance>
+					<input type="hidden" name="target" value={target} />
+					<input type="hidden" name="id" value={x.id} />
+					<button class="text-xs text-blue-900 hover:underline dark:text-blue-300">Mark paid</button
+					>
+				</form>
+			{/if}
+		{/if}
+		<details class="w-full" open={form?.costFor === x.id}>
+			<summary class="cursor-pointer text-xs text-slate-500 select-none dark:text-slate-400"
+				>{c ? 'Change cost' : 'Add cost'}</summary
+			>
+			<form
+				method="POST"
+				action="?/setCost"
+				use:enhance={closeOnSave}
+				class="mt-2 grid grid-cols-6 gap-2 text-sm"
+			>
+				<input type="hidden" name="target" value={target} />
+				<input type="hidden" name="id" value={x.id} />
+				<CostFields cost={x} currency={data.lastCurrency} />
+				<button
+					class="col-span-3 rounded-lg bg-blue-900 px-3 py-1.5 font-medium text-white hover:bg-blue-800"
+					>Save cost</button
+				>
+				{#if c}
+					<button
+						name="clear"
+						value="1"
+						class="col-span-3 rounded-lg border border-slate-300 px-3 py-1.5 dark:border-slate-600"
+						>Remove cost</button
+					>
+				{/if}
+			</form>
+			{#if form?.costFor === x.id}
+				<p class="mt-1 text-sm text-red-600 dark:text-red-400">{form.costError}</p>
+			{/if}
+		</details>
+	</div>
 {/snippet}
 
 {#snippet standby(f: Flight)}
@@ -295,13 +358,16 @@
 				{#snippet extra(entry)}
 					{#if entry.type === 'flight'}
 						{@render fares(entry.flight)}
+						{@render cost('flight', entry.flight)}
 						{@render standby(entry.flight)}
 						{@render remove('?/deleteFlight', 'flightId', entry.flight.id, 'flight')}
 					{:else if entry.phase !== 'end'}
+						{@render cost('item', entry.item)}
 						{@render remove('?/deleteItem', 'itemId', entry.item.id, 'entry')}
 					{/if}
 				{/snippet}
 				{#snippet itemExtra(item)}
+					{@render cost('item', item)}
 					{@render remove('?/deleteItem', 'itemId', item.id, 'entry')}
 				{/snippet}
 			</TimelineView>
@@ -312,6 +378,7 @@
 		today={data.today}
 		tripStart={data.trip.startDate}
 		lookup={data.flightLookup}
+		currency={data.lastCurrency}
 	/>
 </section>
 
@@ -335,6 +402,7 @@
 	today={data.today}
 	error={form?.expenseError}
 	lastCurrency={form?.expenseCurrency}
+	bookings={data.bookings}
 />
 
 <section class="card space-y-3">

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parsePlan, planLength, planToTimeline, type TripPlan } from './plan.ts';
+import {
+	mergePlans,
+	parsePlan,
+	planLength,
+	planParts,
+	planToTimeline,
+	type TripPlan
+} from './plan.ts';
 
 const plan: TripPlan = {
 	summary: '',
@@ -58,7 +65,9 @@ describe('planLength', () => {
 	it('uses the requested length otherwise, within limits', () => {
 		expect(planLength({ type: 'none' }, 4)).toBe(4);
 		expect(planLength({ type: 'none' }, 0)).toBe(1);
-		expect(planLength({ type: 'period', period: '2027-04', months: ['2027-04'] }, 40)).toBe(14);
+		expect(planLength({ type: 'period', period: '2027-04', months: ['2027-04'] }, 40)).toBe(40);
+		expect(planLength({ type: 'none' }, 90)).toBe(60);
+		expect(planLength({ type: 'exact', start: '2026-11-01', end: '2026-11-21' }, 3)).toBe(21);
 	});
 });
 
@@ -113,5 +122,60 @@ describe('parsePlan', () => {
 
 	it('still rejects a plan missing required parts', () => {
 		expect(() => parsePlan({ summary: 'x' })).toThrow();
+	});
+});
+
+describe('planParts', () => {
+	it('keeps two weeks or less in one go', () => {
+		expect(planParts(5)).toEqual([[1, 5]]);
+		expect(planParts(14)).toEqual([[1, 14]]);
+	});
+
+	it('splits longer trips into even parts that cover every day', () => {
+		expect(planParts(21)).toEqual([
+			[1, 7],
+			[8, 14],
+			[15, 21]
+		]);
+		for (const days of [15, 23, 30, 47, 60]) {
+			const parts = planParts(days);
+			expect(parts[0][0]).toBe(1);
+			expect(parts.at(-1)![1]).toBe(days);
+			parts.forEach(([a, b], i) => {
+				expect(b - a + 1).toBeLessThanOrEqual(10);
+				if (i > 0) expect(a).toBe(parts[i - 1][1] + 1);
+			});
+		}
+	});
+});
+
+describe('mergePlans', () => {
+	const part = (days: number[], total: number, tips: string[]): TripPlan => ({
+		summary: `Part from day ${days[0]}`,
+		whereToStay: { area: `Area ${days[0]}`, why: '', priceRange: '' },
+		days: days.map((day) => ({ day, theme: `Day ${day}`, items: [] })),
+		budget: {
+			lines: [
+				{ category: 'food', amount: total / 2, note: 'Meals' },
+				{ category: 'activities', amount: total / 2, note: 'Tickets' }
+			],
+			total
+		},
+		tips,
+		packing: ['Sunscreen']
+	});
+
+	it('joins days in order and adds up the budget', () => {
+		const plan = mergePlans([
+			part([1, 2], 200, ['Buy a pass']),
+			part([3, 4], 100, ['buy a pass', 'Book ahead'])
+		]);
+		expect(plan.summary).toBe('Part from day 1');
+		expect(plan.whereToStay.area).toBe('Area 1');
+		expect(plan.days.map((d) => d.day)).toEqual([1, 2, 3, 4]);
+		expect(plan.budget.total).toBe(300);
+		expect(plan.budget.lines.find((l) => l.category === 'food')?.amount).toBe(150);
+		expect(plan.tips).toHaveLength(2);
+		expect(plan.packing).toEqual(['Sunscreen']);
 	});
 });

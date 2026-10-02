@@ -92,7 +92,42 @@ export const TripPlanSchema = z.object({
 export type TripPlan = z.infer<typeof TripPlanSchema>;
 export type PlanItem = TripPlan['days'][number]['items'][number];
 
-export const MAX_PLAN_DAYS = 14;
+export const MAX_PLAN_DAYS = 60;
+/** Longer plans are drafted in parts of at most this many days, one after another. */
+export const PART_DAYS = 10;
+
+/** Day ranges to draft separately: [[1, 10], [11, 20], …], evenly sized. A short trip is one part. */
+export function planParts(days: number): [number, number][] {
+	if (days <= 14) return [[1, days]];
+	const count = Math.ceil(days / PART_DAYS);
+	const size = Math.ceil(days / count);
+	return Array.from({ length: count }, (_, i): [number, number] => [
+		i * size + 1,
+		Math.min(days, (i + 1) * size)
+	]).filter(([a, b]) => a <= b);
+}
+
+/** Joins plans drafted in parts: the first part sets the scene, days and budgets add up. */
+export function mergePlans(parts: TripPlan[]): TripPlan {
+	const [first, ...rest] = parts;
+	const lines = new Map<string, TripPlan['budget']['lines'][number]>();
+	for (const line of parts.flatMap((p) => p.budget.lines)) {
+		const seen = lines.get(line.category);
+		if (seen) seen.amount += line.amount;
+		else lines.set(line.category, { ...line });
+	}
+	const unique = (xs: string[]) => [...new Map(xs.map((x) => [x.toLowerCase(), x])).values()];
+	return {
+		...first,
+		days: parts.flatMap((p) => p.days).sort((a, b) => a.day - b.day),
+		budget: {
+			lines: [...lines.values()],
+			total: parts.reduce((sum, p) => sum + p.budget.total, 0)
+		},
+		tips: unique([...first.tips, ...rest.flatMap((p) => p.tips)]),
+		packing: unique(parts.flatMap((p) => p.packing))
+	};
+}
 
 /** Exact dates fix the length; otherwise the person chooses it. */
 export function planLength(window: WhenWindow, requested: number): number {

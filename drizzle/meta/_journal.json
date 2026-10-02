@@ -64,6 +64,13 @@
       "when": 1790963858737,
       "tag": "0008_flight_details_edit_links",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790964443149,
+      "tag": "0009_booking_costs",
+      "breakpoints": true
     }
   ]
 }
