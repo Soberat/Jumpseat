@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LOCALE } from '#lib/format.ts';
 	import { untrack } from 'svelte';
 	import { upcomingMonths } from '#lib/calendar.ts';
 	import { upcomingQuarters, whenMode, type TripWhen, type WhenMode } from '#lib/when.ts';
@@ -32,7 +33,7 @@
 	const monthParts = (m: string) => {
 		const d = new Date(`${m}-15T12:00:00Z`);
 		return {
-			name: d.toLocaleDateString(undefined, { month: 'long', timeZone: 'UTC' }),
+			name: d.toLocaleDateString(LOCALE, { month: 'long', timeZone: 'UTC' }),
 			year: m.slice(0, 4)
 		};
 	};
@@ -40,7 +41,7 @@
 		const first = (Number(q.slice(-1)) - 1) * 3;
 		return [0, 2]
 			.map((i) =>
-				new Date(Date.UTC(2000, first + i, 15)).toLocaleDateString(undefined, {
+				new Date(Date.UTC(2000, first + i, 15)).toLocaleDateString(LOCALE, {
 					month: 'short',
 					timeZone: 'UTC'
 				})

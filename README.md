@@ -47,6 +47,14 @@ lives in the `jumpseat-data` volume, and migrations run automatically on start.
 On Proxmox, run it in a VM, or in an LXC container with nesting enabled and `/dev/net/tun`
 passed through (needed by the Tailscale sidecar).
 
+### Flight lookup
+
+Set `AERODATABOX_API_KEY` in `.env` (a RapidAPI key for
+[AeroDataBox](https://rapidapi.com/aedbx-aedbx/api/aerodatabox); the free tier covers a few
+hundred lookups a month) and the flight form gets a **Look up flight** button that fills in the
+route, times and length from the flight number and date. Fares aren't available from any free
+API, so flights link to Google Flights and Skyscanner searches instead.
+
 ### Sharing trips with people outside your tailnet
 
 Share links only work for others once you switch on
@@ -57,6 +65,10 @@ from the internet:
 2. In `.env`, set `TS_SERVE_CONFIG=serve-with-funnel.json` and
    `PUBLIC_ORIGIN=https://jumpseat.<your-tailnet>.ts.net`.
 3. `docker compose up -d`
+
+Links are **view only** or **editable**. Someone with an editable link can plan along in the
+journey view (add ideas, drag them onto days, set times and lengths), but can't reach the rest of
+the trip page, standby loads or booking references. Revoke a link on the trip page to cut access.
 
 Tailscale tags every Funnel request with a `Tailscale-Funnel-Request` header (and strips any copy
 a client sends). Jumpseat answers those requests only for share pages (`/s/…`) and static

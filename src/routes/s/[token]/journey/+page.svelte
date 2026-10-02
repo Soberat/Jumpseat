@@ -5,4 +5,6 @@
 	let { data }: PageProps = $props();
 </script>
 
-<JourneyView {data} backHref="/trips/{data.trip.id}" />
+<svelte:head><meta name="robots" content="noindex" /></svelte:head>
+
+<JourneyView {data} editable={data.editable} backHref={data.backHref} guest />

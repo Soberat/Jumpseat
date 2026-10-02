@@ -20,6 +20,9 @@ const flight = (id: string, extra: Partial<Flight> = {}): Flight => ({
 	destination: 'LIS',
 	departureDate: '2026-11-05',
 	departureTime: null,
+	arrivalDate: null,
+	arrivalTime: null,
+	durationMinutes: null,
 	standby: true,
 	createdAt: new Date(0),
 	...extra

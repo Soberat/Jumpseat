@@ -38,6 +38,9 @@ function flight(over: Partial<Flight>): Flight {
 		destination: 'LIS',
 		departureDate: '2026-10-03',
 		departureTime: '09:40',
+		arrivalDate: null,
+		arrivalTime: null,
+		durationMinutes: null,
 		standby: true,
 		createdAt: created,
 		...over

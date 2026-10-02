@@ -1,3 +1,4 @@
+import { NUMBER_LOCALE } from './format.ts';
 export const EXPENSE_CATEGORIES = [
 	'flights',
 	'stay',
@@ -38,7 +39,7 @@ export function parseAmount(input: string, currency: string): number | null {
 	return minor > 0 ? minor : null;
 }
 
-export function formatMoney(minor: number, currency: string, locale?: string): string {
+export function formatMoney(minor: number, currency: string, locale = NUMBER_LOCALE): string {
 	const digits = minorDigits(currency);
 	try {
 		return new Intl.NumberFormat(locale, {

@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { formatStamp } from '#lib/format.ts';
 	import { onMount } from 'svelte';
+	import { priceLinks } from '#lib/flight-info.ts';
+	import { formatDuration } from '#lib/duration.ts';
 	import { enhance } from '$app/forms';
 	import AddToTimeline from '#lib/components/AddToTimeline.svelte';
 	import TimelineView from '#lib/components/TimelineView.svelte';
@@ -44,7 +47,7 @@
 		tight: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
 		unlikely: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
 	};
-	const time = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+	const time = (d: Date) => formatStamp(d);
 </script>
 
 {#snippet remove(action: string, name: string, id: string, what: string)}
@@ -55,6 +58,25 @@
 			>Remove {what}</button
 		>
 	</form>
+{/snippet}
+
+{#snippet fares(f: Flight)}
+	{@const links = priceLinks(f.origin, f.destination, f.departureDate)}
+	<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+		{#if f.arrivalTime}
+			Lands {f.arrivalTime}{f.durationMinutes
+				? ` · ${formatDuration(f.durationMinutes)} gate to gate`
+				: ''} ·
+		{/if}
+		Fares:
+		<a href={links.google} target="_blank" rel="noopener noreferrer" class="underline"
+			>Google Flights</a
+		>
+		·
+		<a href={links.skyscanner} target="_blank" rel="noopener noreferrer" class="underline"
+			>Skyscanner</a
+		>
+	</p>
 {/snippet}
 
 {#snippet standby(f: Flight)}
@@ -272,6 +294,7 @@
 			>
 				{#snippet extra(entry)}
 					{#if entry.type === 'flight'}
+						{@render fares(entry.flight)}
 						{@render standby(entry.flight)}
 						{@render remove('?/deleteFlight', 'flightId', entry.flight.id, 'flight')}
 					{:else if entry.phase !== 'end'}
@@ -288,6 +311,7 @@
 		error={form?.itemError ?? form?.flightError}
 		today={data.today}
 		tripStart={data.trip.startDate}
+		lookup={data.flightLookup}
 	/>
 </section>
 
@@ -316,26 +340,50 @@
 <section class="card space-y-3">
 	<h2 class="text-lg font-semibold">Sharing</h2>
 	<p class="text-sm text-slate-500 dark:text-slate-400">
-		A share link shows this trip's plan and weather to anyone who has it, without access to the rest
-		of Jumpseat. Standby loads stay private.
+		Anyone with a link sees this trip's plan and weather, without access to the rest of Jumpseat.
+		With an <strong>editable</strong> link they can also plan along in the journey view: add ideas, move
+		things around and set times. Standby loads and booking references stay private.
 	</p>
 	{#each data.shares as s (s.token)}
 		<form method="POST" action="?/revokeShare" use:enhance class="flex items-center gap-2 text-sm">
 			<input type="hidden" name="token" value={s.token} />
+			<span
+				class={[
+					'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
+					s.canEdit
+						? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+						: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+				]}>{s.canEdit ? 'Can edit' : 'View only'}</span
+			>
 			<input
 				readonly
 				value={s.url}
 				class="min-w-0 flex-1 font-mono text-xs"
 				aria-label="Share link"
+				onfocus={(e) => e.currentTarget.select()}
 			/>
+			<button
+				type="button"
+				onclick={() => navigator.clipboard?.writeText(s.url)}
+				class="text-blue-900 hover:underline dark:text-blue-300">Copy</button
+			>
 			<button class="text-red-600 hover:underline dark:text-red-400">Revoke</button>
 		</form>
 	{/each}
-	<form method="POST" action="?/share" use:enhance>
+	<form method="POST" action="?/share" use:enhance class="flex flex-wrap gap-2">
 		<button
+			name="canEdit"
+			value=""
 			class="rounded-lg border border-blue-900 px-3 py-2 text-sm font-medium text-blue-900 dark:border-blue-300 dark:text-blue-300"
 		>
-			Create share link
+			Create view-only link
+		</button>
+		<button
+			name="canEdit"
+			value="on"
+			class="rounded-lg border border-amber-600 px-3 py-2 text-sm font-medium text-amber-700 dark:border-amber-400 dark:text-amber-300"
+		>
+			Create editable link
 		</button>
 	</form>
 </section>

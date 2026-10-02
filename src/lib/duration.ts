@@ -13,8 +13,11 @@ const DEFAULT_MINUTES: Record<TimelineItem['kind'], number> = {
 
 export const MAX_MINUTES = 24 * 60;
 
-/** Block time for a flight: cruise at ~780 km/h plus taxi, climb and descent. */
-export function flightMinutes(f: Pick<Flight, 'origin' | 'destination'>): number {
+/** Block time for a flight: the scheduled one if looked up, else ~780 km/h plus taxi, climb and descent. */
+export function flightMinutes(
+	f: Pick<Flight, 'origin' | 'destination'> & { durationMinutes?: number | null }
+): number {
+	if (f.durationMinutes) return f.durationMinutes;
 	const a = airportByCode(f.origin);
 	const b = airportByCode(f.destination);
 	if (!a || !b) return 120;

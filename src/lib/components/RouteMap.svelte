@@ -66,6 +66,19 @@
 		)
 	);
 	const labelSize = $derived(compact ? 30 : 22);
+
+	// Planes take turns: each flies its leg in its own slot of a shared loop,
+	// so the trip plays out in order instead of every flight at once.
+	const flying = $derived(route.legs.flatMap((_, i) => (firstOfPair[i] ? [i] : [])));
+	const SLOT = 4.5;
+	const cycle = $derived(Math.max(1, flying.length) * SLOT);
+	function turn(i: number) {
+		const n = flying.length;
+		const j = flying.indexOf(i);
+		const a = (j / n).toFixed(4);
+		const b = ((j + 1) / n).toFixed(4);
+		return { motion: `0;${a};${b};1`, show: `0;${a};${b}` };
+	}
 </script>
 
 <svg viewBox="0 0 {width} {height}" class="block h-full w-full" role="img" aria-label="Route map">
@@ -104,7 +117,8 @@
 			style="--len: 4000; animation-delay: {0.3 + i * 0.5}s"
 		/>
 		{#if motion && firstOfPair[i]}
-			<g>
+			{@const t = turn(i)}
+			<g opacity="0">
 				<!-- A plane pointing along +x, so rotate="auto" follows the route. -->
 				<path
 					d="M13 0 5-2.2-1-11h-3.4L-.4-2.2H-8l-2.6-3.6h-2.2L-11.4 0l-1.4 5.8h2.2L-8 2.2h7.6L-4.4 11H-1L5 2.2Z"
@@ -113,17 +127,27 @@
 					style="filter: drop-shadow(0 0 4px rgb(246 178 60 / 0.9))"
 				/>
 				<animateMotion
-					dur="{leg.planned ? 7 : 5}s"
-					begin="{0.3 + i * 0.5}s"
+					dur="{cycle}s"
+					begin="0.6s"
 					repeatCount="indefinite"
 					rotate="auto"
-					keyPoints="0;1"
-					keyTimes="0;1"
+					keyPoints="0;0;1;1"
+					keyTimes={t.motion}
 					calcMode="spline"
-					keySplines="0.45 0 0.55 1"
+					keySplines="0 0 1 1;0.45 0 0.55 1;0 0 1 1"
 				>
 					<mpath href="#{uid}-leg{i}" />
 				</animateMotion>
+				<!-- Only visible during its own turn. -->
+				<animate
+					attributeName="opacity"
+					dur="{cycle}s"
+					begin="0.6s"
+					repeatCount="indefinite"
+					calcMode="discrete"
+					values="0;1;0"
+					keyTimes={t.show}
+				/>
 			</g>
 		{/if}
 	{/each}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LOCALE } from '#lib/format.ts';
 	import type { Snippet } from 'svelte';
 	import type { TimelineItem } from '#lib/server/db/schema.ts';
 	import {
@@ -32,7 +33,7 @@
 	} = $props();
 
 	const dayLabel = (date: string) =>
-		new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
+		new Date(`${date}T12:00:00`).toLocaleDateString(LOCALE, {
 			weekday: 'long',
 			day: 'numeric',
 			month: 'long'

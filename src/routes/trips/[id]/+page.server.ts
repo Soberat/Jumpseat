@@ -21,6 +21,7 @@ import { parseOrigin, tripRoute } from '#lib/trip-route.ts';
 import { buildGantt } from '#lib/gantt.ts';
 import { scheduleTrip } from '#lib/schedule.ts';
 import { parseDuration } from '#lib/duration.ts';
+import { flightLookupEnabled } from '#lib/server/flight-lookup.ts';
 import {
 	buildTimeline,
 	TIMELINE_KINDS,
@@ -92,7 +93,12 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		packing,
 		expenses,
 		today: new Date().toISOString().slice(0, 10),
-		shares: shares.map((s) => ({ token: s.token, url: `${origin}/s/${s.token}` }))
+		shares: shares.map((s) => ({
+			token: s.token,
+			canEdit: s.canEdit,
+			url: `${origin}/s/${s.token}`
+		})),
+		flightLookup: flightLookupEnabled()
 	};
 };
 
@@ -145,6 +151,9 @@ export const actions: Actions = {
 			destination,
 			departureDate,
 			departureTime: optionalField(data, 'departureTime'),
+			arrivalDate: optionalField(data, 'arrivalDate'),
+			arrivalTime: optionalField(data, 'arrivalTime'),
+			durationMinutes: parseDuration(field(data, 'durationMinutes')),
 			standby: data.get('standby') === 'on'
 		});
 	},
@@ -302,10 +311,11 @@ export const actions: Actions = {
 		await db.delete(expense).where(and(eq(expense.id, id), eq(expense.tripId, params.id)));
 	},
 
-	share: async ({ params }) => {
+	share: async ({ params, request }) => {
+		const canEdit = (await request.formData()).get('canEdit') === 'on';
 		await db
 			.insert(shareLink)
-			.values({ token: randomBytes(18).toString('base64url'), tripId: params.id });
+			.values({ token: randomBytes(18).toString('base64url'), tripId: params.id, canEdit });
 	},
 
 	revokeShare: async ({ params, request }) => {

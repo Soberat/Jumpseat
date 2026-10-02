@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LOCALE } from '#lib/format.ts';
 	import { untrack } from 'svelte';
 	import { monthGrid, nights, pickDate, shiftMonth } from '#lib/calendar.ts';
 
@@ -33,20 +34,20 @@
 	const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
 	const monthTitle = (month: string) =>
-		new Date(`${month}-15T12:00:00Z`).toLocaleDateString(undefined, {
+		new Date(`${month}-15T12:00:00Z`).toLocaleDateString(LOCALE, {
 			month: 'long',
 			year: 'numeric',
 			timeZone: 'UTC'
 		});
 	const short = (date: string) =>
-		new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, {
+		new Date(`${date}T12:00:00Z`).toLocaleDateString(LOCALE, {
 			weekday: 'short',
 			day: 'numeric',
 			month: 'short',
 			timeZone: 'UTC'
 		});
 	const full = (date: string) =>
-		new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, {
+		new Date(`${date}T12:00:00Z`).toLocaleDateString(LOCALE, {
 			weekday: 'long',
 			day: 'numeric',
 			month: 'long',

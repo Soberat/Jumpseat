@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LOCALE, formatNumber } from '#lib/format.ts';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { addDays } from '#lib/climate.ts';
@@ -35,18 +36,14 @@
 		transport: '🚆',
 		stay: '🏨'
 	};
-	const money = (n: number, currency: string) =>
-		`${Math.round(n).toLocaleString(undefined)} ${currency}`;
+	const money = (n: number, currency: string) => `${formatNumber(Math.round(n))} ${currency}`;
 	const dayLabel = (day: number) =>
 		data.trip.startDate
-			? new Date(`${addDays(data.trip.startDate, day - 1)}T12:00:00`).toLocaleDateString(
-					undefined,
-					{
-						weekday: 'long',
-						day: 'numeric',
-						month: 'long'
-					}
-				)
+			? new Date(`${addDays(data.trip.startDate, day - 1)}T12:00:00`).toLocaleDateString(LOCALE, {
+					weekday: 'long',
+					day: 'numeric',
+					month: 'long'
+				})
 			: `Day ${day}`;
 	const previous = $derived(plan?.request);
 </script>

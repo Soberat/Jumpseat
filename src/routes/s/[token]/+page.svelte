@@ -28,6 +28,25 @@
 	<Weather weather={data.weather} place={data.trip.destination} />
 {/if}
 
+<a
+	href="/s/{data.token}/journey"
+	class="group relative flex items-center gap-4 overflow-hidden rounded-2xl bg-ink-900 p-4 text-white shadow-lg transition hover:shadow-xl"
+>
+	<span
+		class="relative flex size-12 shrink-0 items-center justify-center rounded-full bg-runway text-2xl text-ink-950 transition group-hover:scale-110"
+		aria-hidden="true">🗺️</span
+	>
+	<span class="relative min-w-0 flex-1">
+		<span class="block font-display text-lg font-bold">Open the journey</span>
+		<span class="block text-sm text-white/70"
+			>{data.canEdit
+				? 'You can plan along: drag ideas and sights onto the days, set times and lengths.'
+				: 'The trip day by day, full screen.'}</span
+		>
+	</span>
+	<span class="relative text-xl transition group-hover:translate-x-1" aria-hidden="true">→</span>
+</a>
+
 <section class="card space-y-4">
 	<h2 class="text-lg font-semibold">Timeline</h2>
 	<TimelineView

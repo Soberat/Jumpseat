@@ -10,6 +10,9 @@ const flight = (id: string, date: string, time: string | null): Flight => ({
 	destination: 'LIS',
 	departureDate: date,
 	departureTime: time,
+	arrivalDate: null,
+	arrivalTime: null,
+	durationMinutes: null,
 	standby: true,
 	createdAt: new Date(0)
 });

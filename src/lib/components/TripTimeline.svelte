@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LOCALE } from '#lib/format.ts';
 	import { onMount } from 'svelte';
 	import { daysBetween } from '#lib/climate.ts';
 	import type { Gantt, GanttBar } from '#lib/gantt.ts';
@@ -36,9 +37,9 @@
 		other: 'bg-violet-500 text-white'
 	};
 	const weekday = (d: string) =>
-		new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
+		new Date(`${d}T12:00:00`).toLocaleDateString(LOCALE, { weekday: 'short' });
 	const dayOfMonth = (d: string) =>
-		new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+		new Date(`${d}T12:00:00`).toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' });
 	const nights = (b: GanttBar) => Math.round(b.end - b.start);
 	const clock = (x: number) => {
 		const m = Math.round((x - Math.floor(x)) * 1440);

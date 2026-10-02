@@ -42,6 +42,8 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 			hasLocation: trip.latitude !== null
 		},
 		timeline: buildTimeline(found.flights, schedule.items),
+		token: params.token,
+		canEdit: link.canEdit,
 		schedule: { start: schedule.start, undated: schedule.undated },
 		route: tripRoute(trip, found.flights),
 		today: new Date().toISOString().slice(0, 10),

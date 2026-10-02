@@ -1,10 +1,83 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
+	import { normaliseFlightNumber, priceLinks, type FlightInfo } from '#lib/flight-info.ts';
 	import DateRangePicker from './DateRangePicker.svelte';
 	import { KIND_LABELS, MODE_LABELS, TIMELINE_KINDS, TRANSPORT_MODES } from '#lib/timeline.ts';
 
-	let { error, today, tripStart }: { error?: string; today: string; tripStart?: string | null } =
-		$props();
+	let {
+		error,
+		today,
+		tripStart,
+		lookup = false
+	}: {
+		error?: string;
+		today: string;
+		tripStart?: string | null;
+		/** Flight lookup by number is set up on the server. */
+		lookup?: boolean;
+	} = $props();
+
+	// Flight form, filled by hand or from a schedule lookup.
+	let flightNumber = $state('');
+	let origin = $state('');
+	let destination = $state('');
+	let departureDate = $state(untrack(() => tripStart ?? ''));
+	let departureTime = $state('');
+	let arrival = $state<{ date: string | null; time: string | null; minutes: number | null }>({
+		date: null,
+		time: null,
+		minutes: null
+	});
+	let found = $state<FlightInfo[]>([]);
+	let lookupNote = $state<string | null>(null);
+	let looking = $state(false);
+	const prices = $derived(
+		origin.length === 3 && destination.length === 3 && departureDate
+			? priceLinks(origin.toUpperCase(), destination.toUpperCase(), departureDate)
+			: null
+	);
+
+	function useFlight(f: FlightInfo) {
+		origin = f.origin;
+		destination = f.destination;
+		departureDate = f.departureDate;
+		departureTime = f.departureTime;
+		arrival = { date: f.arrivalDate, time: f.arrivalTime, minutes: f.durationMinutes };
+		lookupNote = [
+			f.airline,
+			`${f.originName ?? f.origin} ${f.departureTime} → ${f.destinationName ?? f.destination} ${f.arrivalTime ?? ''}`.trim(),
+			f.aircraft,
+			f.terminal ? `Terminal ${f.terminal}` : null
+		]
+			.filter(Boolean)
+			.join(' · ');
+	}
+
+	async function lookUp() {
+		const number = normaliseFlightNumber(flightNumber);
+		if (!number || !departureDate) {
+			lookupNote = 'Type the flight number and pick the date first.';
+			return;
+		}
+		looking = true;
+		lookupNote = null;
+		found = [];
+		try {
+			const res = await fetch(`/api/flight-lookup?number=${number}&date=${departureDate}`);
+			if (!res.ok) throw new Error((await res.json().catch(() => null))?.message);
+			const { flights } = (await res.json()) as { flights: FlightInfo[] };
+			if (flights.length === 0) lookupNote = `No ${number} found on that date. Fill it in by hand.`;
+			else {
+				found = flights;
+				useFlight(flights[0]);
+			}
+		} catch (e) {
+			lookupNote = (e as Error).message || 'Lookup failed. Fill it in by hand.';
+		} finally {
+			looking = false;
+		}
+	}
 
 	type Choice = 'flight' | (typeof TIMELINE_KINDS)[number];
 	const CHOICES: Choice[] = ['flight', ...TIMELINE_KINDS];
@@ -57,17 +130,101 @@
 		<form
 			method="POST"
 			action="?/addFlight"
-			use:enhance
+			use:enhance={() =>
+				async ({ update, result }) => {
+					await update({ reset: false });
+					if (result.type === 'success') {
+						flightNumber = origin = destination = departureTime = '';
+						arrival = { date: null, time: null, minutes: null };
+						found = [];
+						lookupNote = null;
+					}
+				}}
 			class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-6"
 		>
-			<input name="flightNumber" required placeholder="LH400" aria-label="Flight number" />
-			<input name="origin" required maxlength="4" placeholder="FRA" aria-label="From" />
-			<input name="destination" required maxlength="4" placeholder="JFK" aria-label="To" />
-			<input name="departureDate" type="date" required aria-label="Date" />
-			<input name="departureTime" type="time" aria-label="Departure time" />
+			<input
+				name="flightNumber"
+				required
+				placeholder="LH1366"
+				aria-label="Flight number"
+				bind:value={flightNumber}
+			/>
+			<input
+				name="departureDate"
+				type="date"
+				required
+				aria-label="Date"
+				bind:value={departureDate}
+			/>
+			{#if lookup}
+				<button
+					type="button"
+					onclick={lookUp}
+					disabled={looking}
+					class="col-span-2 rounded-lg border border-blue-900 px-3 py-2 font-medium text-blue-900 hover:bg-blue-50 disabled:opacity-60 sm:col-span-2 dark:border-blue-300 dark:text-blue-300 dark:hover:bg-blue-950"
+					>{looking ? 'Looking up…' : '🔎 Look up flight'}</button
+				>
+			{/if}
+			<span class={['hidden', lookup ? 'sm:hidden' : 'sm:col-span-2 sm:block']}></span>
+			<input
+				name="origin"
+				required
+				maxlength="4"
+				placeholder="KRK"
+				aria-label="From"
+				bind:value={origin}
+			/>
+			<input
+				name="destination"
+				required
+				maxlength="4"
+				placeholder="MUC"
+				aria-label="To"
+				bind:value={destination}
+			/>
+			<input
+				name="departureTime"
+				type="time"
+				aria-label="Departure time"
+				bind:value={departureTime}
+			/>
+			<input type="hidden" name="arrivalDate" value={arrival.date ?? ''} />
+			<input type="hidden" name="arrivalTime" value={arrival.time ?? ''} />
+			<input type="hidden" name="durationMinutes" value={arrival.minutes ?? ''} />
 			<label class="flex items-center gap-2">
 				<input type="checkbox" name="standby" checked /> Standby
 			</label>
+			{#if lookupNote}
+				<p class="col-span-full text-sm text-slate-600 dark:text-slate-300">{lookupNote}</p>
+			{/if}
+			{#if found.length > 1}
+				<div class="col-span-full flex flex-wrap gap-1.5">
+					{#each found as f (f.origin + f.destination)}
+						<button
+							type="button"
+							onclick={() => useFlight(f)}
+							class={[
+								'rounded-full border px-2.5 py-0.5 font-mono text-xs',
+								origin === f.origin && destination === f.destination
+									? 'border-blue-900 bg-blue-900 text-white'
+									: 'border-slate-300 dark:border-slate-600'
+							]}>{f.origin} → {f.destination}</button
+						>
+					{/each}
+				</div>
+			{/if}
+			{#if prices}
+				<p class="col-span-full text-xs text-slate-500 dark:text-slate-400">
+					Fares for this route:
+					<a href={prices.google} target="_blank" rel="noopener noreferrer" class="underline"
+						>Google Flights</a
+					>
+					·
+					<a href={prices.skyscanner} target="_blank" rel="noopener noreferrer" class="underline"
+						>Skyscanner</a
+					>
+				</p>
+			{/if}
 			<button
 				class="col-span-full rounded-lg bg-blue-900 px-4 py-2 font-medium text-white hover:bg-blue-800"
 			>

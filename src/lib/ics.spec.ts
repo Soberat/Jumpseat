@@ -18,6 +18,9 @@ const flight: Flight = {
 	destination: 'LIS',
 	departureDate: '2026-11-05',
 	departureTime: '09:40',
+	arrivalDate: null,
+	arrivalTime: null,
+	durationMinutes: null,
 	standby: true,
 	createdAt: new Date(0)
 };

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LOCALE } from '#lib/format.ts';
 	import { enhance } from '$app/forms';
 	import {
 		CATEGORY_LABELS,
@@ -26,7 +27,7 @@
 		})).filter((c) => c.totals.length > 0)
 	);
 	const dateLabel = (d: string) =>
-		new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+		new Date(`${d}T12:00:00`).toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' });
 </script>
 
 <section class="card space-y-3">

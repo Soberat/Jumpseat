@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatClock, formatNumber } from '#lib/format.ts';
 	import { onMount } from 'svelte';
 	import { countdown } from '#lib/countdown.ts';
 	import { describeWhen, type TripWhen } from '#lib/when.ts';
@@ -31,11 +32,7 @@
 		if (!timezone) return;
 		const tick = () => {
 			const now = new Date();
-			localTime = now.toLocaleTimeString(undefined, {
-				timeZone: timezone,
-				hour: '2-digit',
-				minute: '2-digit'
-			});
+			localTime = formatClock(now, timezone);
 			hour = Number(
 				new Intl.DateTimeFormat('en-GB', {
 					timeZone: timezone,
@@ -97,7 +94,7 @@
 		{/if}
 		{#if route && route.distanceKm > 0}
 			<span class="rounded-full bg-black/30 px-2.5 py-1 backdrop-blur"
-				>{route.distanceKm.toLocaleString()} km from {route.home.code}</span
+				>{formatNumber(route.distanceKm)} km from {route.home.code}</span
 			>
 		{/if}
 	</div>

@@ -1,15 +1,16 @@
 <script lang="ts">
+	import { LOCALE } from '#lib/format.ts';
 	import type { TripWeather } from '#lib/climate.ts';
 
 	let { weather, place }: { weather: TripWeather; place: string } = $props();
 
 	const dayLabel = (date: string) =>
-		new Date(`${date}T12:00:00`).toLocaleDateString(undefined, {
+		new Date(`${date}T12:00:00`).toLocaleDateString(LOCALE, {
 			weekday: 'short',
 			day: 'numeric'
 		});
 	const monthLabel = (month: string) =>
-		new Date(`${month}-15T12:00:00`).toLocaleDateString(undefined, { month: 'long' });
+		new Date(`${month}-15T12:00:00`).toLocaleDateString(LOCALE, { month: 'long' });
 </script>
 
 <section class="card">

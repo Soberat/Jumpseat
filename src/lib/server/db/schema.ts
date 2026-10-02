@@ -42,6 +42,10 @@ export const flight = sqliteTable('flight', {
 	destination: text('destination').notNull(),
 	departureDate: text('departure_date').notNull(),
 	departureTime: text('departure_time'),
+	// From a schedule lookup; local to the arrival airport.
+	arrivalDate: text('arrival_date'),
+	arrivalTime: text('arrival_time'),
+	durationMinutes: integer('duration_minutes'),
 	standby: integer('standby', { mode: 'boolean' }).notNull().default(false),
 	createdAt: createdAt()
 });
@@ -61,12 +65,13 @@ export const standbyLoad = sqliteTable('standby_load', {
 	recordedAt: createdAt()
 });
 
-/** Read-only public link to a trip. */
+/** Public link to a trip: read-only, or letting whoever has it plan along. */
 export const shareLink = sqliteTable('share_link', {
 	token: text('token').primaryKey(),
 	tripId: text('trip_id')
 		.notNull()
 		.references(() => trip.id, { onDelete: 'cascade' }),
+	canEdit: integer('can_edit', { mode: 'boolean' }).notNull().default(false),
 	createdAt: createdAt(),
 	revokedAt: integer('revoked_at', { mode: 'timestamp' })
 });
