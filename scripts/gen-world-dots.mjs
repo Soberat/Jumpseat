@@ -17,7 +17,12 @@ for (let lat = NORTH; lat >= SOUTH; lat -= STEP) {
 		bits += geoContains(land, [lon + STEP / 2, lat]) ? '1' : '0';
 	}
 	// 4 cells per hex digit.
-	rows.push(bits.match(/.{4}/g).map((b) => parseInt(b, 2).toString(16)).join(''));
+	rows.push(
+		bits
+			.match(/.{4}/g)
+			.map((b) => parseInt(b, 2).toString(16))
+			.join('')
+	);
 }
 
 writeFileSync(
@@ -29,4 +34,12 @@ export const DOT_NORTH = ${NORTH};
 export const LAND_ROWS = ${JSON.stringify(rows, null, '\t')};
 `
 );
-console.log(rows.length, 'rows,', rows.join('').split('').reduce((n, h) => n + parseInt(h, 16).toString(2).replace(/0/g, '').length, 0), 'land dots');
+console.log(
+	rows.length,
+	'rows,',
+	rows
+		.join('')
+		.split('')
+		.reduce((n, h) => n + parseInt(h, 16).toString(2).replace(/0/g, '').length, 0),
+	'land dots'
+);
