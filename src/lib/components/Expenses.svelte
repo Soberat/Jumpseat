@@ -29,7 +29,7 @@
 		new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 </script>
 
-<section class="space-y-3 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+<section class="card space-y-3">
 	<div class="flex flex-wrap items-baseline justify-between gap-2">
 		<h2 class="text-lg font-semibold">Expenses</h2>
 		{#if totals.length > 0}

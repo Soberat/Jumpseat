@@ -4,7 +4,8 @@ import { db } from '#lib/server/db/index.ts';
 import { shareLink } from '#lib/server/db/schema.ts';
 import { getTripWeather } from '#lib/server/open-meteo.ts';
 import { whenWindow } from '#lib/when.ts';
-import { getTripPlan } from '#lib/server/trips.ts';
+import { getTripPlan, homeAirport } from '#lib/server/trips.ts';
+import { tripRoute } from '#lib/trip-route.ts';
 import { buildTimeline } from '#lib/timeline.ts';
 import type { PageServerLoad } from './$types';
 
@@ -35,9 +36,12 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 			startDate: trip.startDate,
 			endDate: trip.endDate,
 			plannedPeriod: trip.plannedPeriod,
+			timezone: trip.timezone,
 			hasLocation: trip.latitude !== null
 		},
 		timeline: buildTimeline(found.flights, items),
+		route: tripRoute(trip, found.flights, await homeAirport()),
+		today: new Date().toISOString().slice(0, 10),
 		weather
 	};
 };

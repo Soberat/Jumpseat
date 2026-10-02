@@ -66,7 +66,7 @@
 </div>
 
 {#if !data.enabled}
-	<section class="space-y-2 rounded-xl bg-white p-4 text-sm shadow-sm dark:bg-slate-800">
+	<section class="card space-y-2 text-sm">
 		<h2 class="text-lg font-semibold">Not set up yet</h2>
 		<p>
 			The planner uses Claude and needs an API key from
@@ -93,7 +93,7 @@
 				startOver = false;
 			};
 		}}
-		class="space-y-5 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800"
+		class="card space-y-5"
 	>
 		{#if plan?.status === 'failed'}
 			<p class="rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-200">
@@ -226,10 +226,7 @@
 {/if}
 
 {#if plan?.status === 'pending'}
-	<section
-		class="flex items-center gap-4 rounded-xl bg-white p-5 shadow-sm dark:bg-slate-800"
-		aria-live="polite"
-	>
+	<section class="card flex items-center gap-4 p-5" aria-live="polite">
 		<div
 			class="size-8 shrink-0 animate-spin rounded-full border-4 border-violet-200 border-t-violet-700 dark:border-violet-900 dark:border-t-violet-300"
 		></div>
@@ -246,7 +243,7 @@
 {#if plan?.status === 'ready' && plan.plan && !startOver}
 	{@const p = plan.plan}
 	{@const currency = plan.request.currency}
-	<section class="space-y-3 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+	<section class="card space-y-3">
 		<p class="text-lg leading-relaxed">{p.summary}</p>
 		<div class="flex flex-wrap gap-2 text-sm text-slate-500 dark:text-slate-400">
 			<span>{plan.request.days} days</span>·<span>{plan.request.travellers} travellers</span>·<span
@@ -285,7 +282,7 @@
 		{#if form?.planError}<p class="text-sm text-red-600 dark:text-red-400">{form.planError}</p>{/if}
 	</section>
 
-	<section class="space-y-1 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+	<section class="card space-y-1">
 		<h2 class="text-lg font-semibold">🏨 Where to stay: {p.whereToStay.area}</h2>
 		<p class="text-sm">{p.whereToStay.why}</p>
 		<p class="text-sm text-slate-500 dark:text-slate-400">
@@ -293,7 +290,7 @@
 		</p>
 	</section>
 
-	<section class="space-y-5 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+	<section class="card space-y-5">
 		<h2 class="text-lg font-semibold">Day by day</h2>
 		<ol class="space-y-5">
 			{#each p.days as day (day.day)}
@@ -332,7 +329,7 @@
 	</section>
 
 	<div class="grid gap-4 sm:grid-cols-2">
-		<section class="space-y-2 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+		<section class="card space-y-2">
 			<h2 class="text-lg font-semibold">Estimated budget</h2>
 			<ul class="divide-y divide-slate-100 text-sm dark:divide-slate-700">
 				{#each p.budget.lines as line, i (i)}
@@ -366,7 +363,7 @@
 			{/if}
 		</section>
 
-		<section class="space-y-2 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+		<section class="card space-y-2">
 			<h2 class="text-lg font-semibold">Local tips</h2>
 			<ul class="list-disc space-y-1 pl-5 text-sm">
 				{#each p.tips as tip, i (i)}<li>{tip}</li>{/each}

@@ -1,8 +1,11 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { db } from '#lib/server/db/index.ts';
-import { trip } from '#lib/server/db/schema.ts';
+import { flight, trip } from '#lib/server/db/schema.ts';
+import { airportByCode } from '#lib/airports.ts';
+import { tripRoute } from '#lib/trip-route.ts';
+import { asc } from 'drizzle-orm';
 import { geocode } from '#lib/server/open-meteo.ts';
-import { field } from '#lib/server/trips.ts';
+import { field, homeAirport } from '#lib/server/trips.ts';
 import { parseWhen, whenSortKey } from '#lib/when.ts';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -12,7 +15,29 @@ export const load: PageServerLoad = async () => {
 		(a, b) =>
 			whenSortKey(a).localeCompare(whenSortKey(b)) || a.createdAt.getTime() - b.createdAt.getTime()
 	);
-	return { trips, today: new Date().toISOString().slice(0, 10) };
+	const flights = await db
+		.select()
+		.from(flight)
+		.orderBy(asc(flight.departureDate), asc(flight.departureTime));
+	const home = await homeAirport();
+	const homeCity = airportByCode(home)?.city ?? home;
+	return {
+		trips: trips.map((t) => {
+			const route = tripRoute(
+				t,
+				flights.filter((f) => f.tripId === t.id),
+				home
+			);
+			return {
+				...t,
+				from: route?.legs[0]?.from.code ?? home,
+				fromLabel: route?.legs[0]?.from.label ?? homeCity,
+				to: route?.destination.code ?? t.destination.slice(0, 3).toUpperCase(),
+				toLabel: route?.destination.label ?? t.destination
+			};
+		}),
+		today: new Date().toISOString().slice(0, 10)
+	};
 };
 
 export const actions: Actions = {

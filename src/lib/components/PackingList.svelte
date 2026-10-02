@@ -18,7 +18,7 @@
 	const packed = $derived(items.filter((i) => i.packed).length);
 </script>
 
-<section class="space-y-3 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+<section class="card space-y-3">
 	<div class="flex items-baseline justify-between gap-2">
 		<h2 class="text-lg font-semibold">Packing list</h2>
 		{#if items.length > 0}

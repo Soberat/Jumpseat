@@ -12,7 +12,7 @@
 		new Date(`${month}-15T12:00:00`).toLocaleDateString(undefined, { month: 'long' });
 </script>
 
-<section class="rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+<section class="card">
 	<h2 class="text-lg font-semibold">{weather.title} in {place}</h2>
 	{#if weather.kind !== 'unavailable' && weather.note}
 		<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{weather.note}</p>

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { placeAndWhen } from '#lib/format.ts';
 	import { enhance } from '$app/forms';
 	import AddToTimeline from '#lib/components/AddToTimeline.svelte';
 	import TimelineView from '#lib/components/TimelineView.svelte';
@@ -9,6 +8,7 @@
 	import PackingList from '#lib/components/PackingList.svelte';
 	import Expenses from '#lib/components/Expenses.svelte';
 	import ThingsToDo from '#lib/components/ThingsToDo.svelte';
+	import TripHero from '#lib/components/TripHero.svelte';
 	import { bestOptions, ODDS_LABELS, oddsFor, type Odds } from '#lib/standby.ts';
 	import type { PageProps } from './$types';
 
@@ -138,15 +138,19 @@
 	<title>{data.trip.title} · Jumpseat</title>
 </svelte:head>
 
-<div>
-	<a href="/" class="text-sm text-blue-900 hover:underline dark:text-blue-300">← All trips</a>
-	<h1 class="mt-1 text-2xl font-bold">{data.trip.title}</h1>
-	<p class="text-slate-500 dark:text-slate-400">
-		{placeAndWhen(data.trip.destination, data.trip)}
-	</p>
-</div>
+<a href="/" class="-mb-3 inline-block text-sm text-blue-900 hover:underline dark:text-blue-300"
+	>← All trips</a
+>
+<TripHero
+	id={data.trip.id}
+	title={data.trip.title}
+	when={data.trip}
+	today={data.today}
+	route={data.route}
+	timezone={data.trip.timezone}
+/>
 
-<details class="rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800" open={!!form?.tripError}>
+<details class="card" open={!!form?.tripError}>
 	<summary class="cursor-pointer font-semibold">Edit trip</summary>
 	<form
 		method="POST"
@@ -195,15 +199,13 @@
 {#if data.trip.latitude !== null && data.weather}
 	<Weather weather={data.weather} place={data.trip.destination} />
 {:else}
-	<p
-		class="rounded-xl bg-white p-4 text-sm text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400"
-	>
+	<p class="card text-sm text-slate-500 dark:text-slate-400">
 		Weather will show once "{data.trip.destination}" can be found on the map. Check the spelling, or
 		try again when you are online.
 	</p>
 {/if}
 
-<section class="space-y-4 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+<section class="card space-y-4">
 	<div class="flex flex-wrap items-baseline justify-between gap-2">
 		<h2 class="text-lg font-semibold">Timeline</h2>
 		<a
@@ -212,7 +214,7 @@
 			class="text-sm text-blue-900 hover:underline dark:text-blue-300">📅 Add to calendar</a
 		>
 	</div>
-	<TimelineView timeline={data.timeline}>
+	<TimelineView timeline={data.timeline} tripStart={data.trip.startDate}>
 		{#snippet extra(entry)}
 			{#if entry.type === 'flight'}
 				{@render standby(entry.flight)}
@@ -254,7 +256,7 @@
 	lastCurrency={form?.expenseCurrency}
 />
 
-<section class="space-y-3 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+<section class="card space-y-3">
 	<h2 class="text-lg font-semibold">Sharing</h2>
 	<p class="text-sm text-slate-500 dark:text-slate-400">
 		A share link shows this trip's plan and weather to anyone who has it, without access to the rest

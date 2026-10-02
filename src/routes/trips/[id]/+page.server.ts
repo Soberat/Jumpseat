@@ -16,7 +16,14 @@ import { EXPENSE_CATEGORIES, parseAmount, type ExpenseCategory } from '#lib/mone
 import { geocode, getTripWeather } from '#lib/server/open-meteo.ts';
 import { getNearbySights } from '#lib/server/wikipedia.ts';
 import { parseWhen, whenWindow } from '#lib/when.ts';
-import { field, getLoadsForFlights, getTripPlan, optionalField } from '#lib/server/trips.ts';
+import {
+	field,
+	getLoadsForFlights,
+	getTripPlan,
+	homeAirport,
+	optionalField
+} from '#lib/server/trips.ts';
+import { tripRoute } from '#lib/trip-route.ts';
 import {
 	buildTimeline,
 	TIMELINE_KINDS,
@@ -81,6 +88,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		timeline: buildTimeline(found.flights, found.items),
 		loads,
 		weather,
+		route: tripRoute(found.trip, found.flights, await homeAirport()),
 		packing,
 		expenses,
 		today: new Date().toISOString().slice(0, 10),

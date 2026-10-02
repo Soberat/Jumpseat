@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { placeAndWhen } from '#lib/format.ts';
+	import BoardingPass from '#lib/components/BoardingPass.svelte';
 	import TripWhenFields from '#lib/components/TripWhenFields.svelte';
 	import { enhance } from '$app/forms';
 	import type { PageProps } from './$types';
@@ -12,30 +12,45 @@
 </svelte:head>
 
 <section class="space-y-3">
-	<h1 class="text-2xl font-bold">Your trips</h1>
+	<div class="flex items-end justify-between gap-2">
+		<h1 class="text-3xl font-bold">Your trips</h1>
+		{#if data.trips.length > 0}
+			<span class="font-mono text-xs tracking-wider text-slate-500 uppercase dark:text-slate-400">
+				{data.trips.length} on the board
+			</span>
+		{/if}
+	</div>
 	{#if data.trips.length === 0}
-		<p class="text-slate-500 dark:text-slate-400">No trips yet. Add your first one below.</p>
+		<div class="card flex flex-col items-center gap-2 py-10 text-center">
+			<span class="text-5xl" aria-hidden="true">🗺️</span>
+			<p class="font-display text-lg font-semibold">Nowhere planned yet</p>
+			<p class="text-sm text-slate-500 dark:text-slate-400">
+				Add your first trip below and it gets its own boarding pass.
+			</p>
+		</div>
 	{:else}
-		<ul class="space-y-2">
-			{#each data.trips as t (t.id)}
+		<ul class="space-y-3">
+			{#each data.trips as t, i (t.id)}
 				<li>
-					<a
-						href="/trips/{t.id}"
-						class="block rounded-xl bg-white p-4 shadow-sm transition hover:shadow-md dark:bg-slate-800"
-					>
-						<div class="font-semibold">{t.title}</div>
-						<div class="text-sm text-slate-500 dark:text-slate-400">
-							{placeAndWhen(t.destination, t)}
-						</div>
-					</a>
+					<BoardingPass
+						id={t.id}
+						title={t.title}
+						when={t}
+						today={data.today}
+						from={t.from}
+						fromLabel={t.fromLabel}
+						to={t.to}
+						toLabel={t.toLabel}
+						index={i}
+					/>
 				</li>
 			{/each}
 		</ul>
 	{/if}
 </section>
 
-<section class="rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
-	<h2 class="mb-3 text-lg font-semibold">New trip</h2>
+<section class="card">
+	<h2 class="mb-3 text-lg font-semibold">✈ New trip</h2>
 	<form method="POST" action="?/create" use:enhance class="grid gap-3 sm:grid-cols-2">
 		<label class="flex flex-col gap-1 text-sm">
 			Name

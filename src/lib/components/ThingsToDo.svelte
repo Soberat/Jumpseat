@@ -17,7 +17,7 @@
 	let showAll = $state(false);
 </script>
 
-<section class="space-y-3 rounded-xl bg-white p-4 shadow-sm dark:bg-slate-800">
+<section class="card space-y-3">
 	<h2 class="text-lg font-semibold">Things to do in {place}</h2>
 	{#await sights}
 		<p class="text-sm text-slate-500 dark:text-slate-400">Looking for sights nearby…</p>
