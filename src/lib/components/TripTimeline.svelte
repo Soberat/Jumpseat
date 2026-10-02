@@ -48,6 +48,8 @@
 	function jump(target: string) {
 		const el = document.getElementById(`entry-${target}`);
 		if (!el) return;
+		const list = el.closest('details');
+		if (list) list.open = true;
 		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		el.classList.remove('flash');
 		void el.offsetWidth;

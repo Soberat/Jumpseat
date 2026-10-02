@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { enhance } from '$app/forms';
 	import AddToTimeline from '#lib/components/AddToTimeline.svelte';
 	import TimelineView from '#lib/components/TimelineView.svelte';
@@ -15,6 +16,19 @@
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
+
+	// Links like "#entry-flight-…" (from the journey view) point into the list: open it first.
+	let listEl = $state<HTMLDetailsElement>();
+	onMount(() => {
+		const open = () => {
+			if (!location.hash.startsWith('#entry-') || !listEl) return;
+			listEl.open = true;
+			document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'center' });
+		};
+		open();
+		addEventListener('hashchange', open);
+		return () => removeEventListener('hashchange', open);
+	});
 
 	const loadsFor = (flightId: string) => data.loads.filter((l) => l.flightId === flightId);
 	const best = $derived(
@@ -217,31 +231,59 @@
 			class="text-sm text-blue-900 hover:underline dark:text-blue-300">📅 Add to calendar</a
 		>
 	</div>
+	<a
+		href="/trips/{data.trip.id}/journey"
+		class="group relative flex items-center gap-4 overflow-hidden rounded-2xl bg-ink-900 p-4 text-white shadow-lg transition hover:shadow-xl"
+	>
+		<span
+			class="pointer-events-none absolute inset-0 bg-[linear-gradient(100deg,transparent_40%,rgb(246_178_60/0.25))]"
+			aria-hidden="true"
+		></span>
+		<span
+			class="relative flex size-12 shrink-0 items-center justify-center rounded-full bg-runway text-2xl text-ink-950 transition group-hover:scale-110"
+			aria-hidden="true">🗺️</span
+		>
+		<span class="relative min-w-0 flex-1">
+			<span class="block font-display text-lg font-bold">Open the journey</span>
+			<span class="block text-sm text-white/70"
+				>Full screen, day by day. Drag ideas and sights onto the days.</span
+			>
+		</span>
+		<span class="relative text-xl transition group-hover:translate-x-1" aria-hidden="true">→</span>
+	</a>
 	{#if data.gantt}
 		<TripTimeline
 			gantt={data.gantt}
 			tripStart={data.schedule.start}
 			undated={data.schedule.undated}
 		/>
-		<h3 class="pt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Day by day</h3>
 	{/if}
-	<TimelineView
-		timeline={data.timeline}
-		tripStart={data.schedule.start}
-		undated={data.schedule.undated}
-	>
-		{#snippet extra(entry)}
-			{#if entry.type === 'flight'}
-				{@render standby(entry.flight)}
-				{@render remove('?/deleteFlight', 'flightId', entry.flight.id, 'flight')}
-			{:else if entry.phase !== 'end'}
-				{@render remove('?/deleteItem', 'itemId', entry.item.id, 'entry')}
-			{/if}
-		{/snippet}
-		{#snippet itemExtra(item)}
-			{@render remove('?/deleteItem', 'itemId', item.id, 'entry')}
-		{/snippet}
-	</TimelineView>
+	<details bind:this={listEl} class="group/list">
+		<summary
+			class="cursor-pointer text-sm font-semibold text-slate-500 select-none dark:text-slate-400"
+		>
+			List view <span class="font-normal">· standby loads, details and removing entries</span>
+		</summary>
+		<div class="pt-4">
+			<TimelineView
+				timeline={data.timeline}
+				tripStart={data.schedule.start}
+				undated={data.schedule.undated}
+			>
+				{#snippet extra(entry)}
+					{#if entry.type === 'flight'}
+						{@render standby(entry.flight)}
+						{@render remove('?/deleteFlight', 'flightId', entry.flight.id, 'flight')}
+					{:else if entry.phase !== 'end'}
+						{@render remove('?/deleteItem', 'itemId', entry.item.id, 'entry')}
+					{/if}
+				{/snippet}
+				{#snippet itemExtra(item)}
+					{@render remove('?/deleteItem', 'itemId', item.id, 'entry')}
+				{/snippet}
+			</TimelineView>
+		</div>
+	</details>
 	<AddToTimeline
 		error={form?.itemError ?? form?.flightError}
 		today={data.today}
