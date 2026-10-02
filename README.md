@@ -90,6 +90,14 @@ Tailscale tags every Funnel request with a `Tailscale-Funnel-Request` header (an
 a client sends). Jumpseat answers those requests only for share pages (`/s/…`) and static
 files. Everything else returns 404, so the rest of the app stays private.
 
+### Letting a friend into the whole app
+
+Set `APP_PASSWORD` in `.env` (with Funnel on, as above) and run `docker compose up -d`. Visitors
+from the internet then get a password page instead of a 404, and once signed in they can use the
+whole app, including the AI planner on your key, for 30 days. People on your tailnet never see the
+password page. Change the password to sign everyone out, or empty it to close the app again.
+Ten wrong passwords in ten minutes lock the page for a while.
+
 ## Development
 
 ```sh

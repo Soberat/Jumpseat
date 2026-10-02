@@ -30,6 +30,8 @@ services:
     environment:
       - DATABASE_URL=/data/jumpseat.db
       - PUBLIC_ORIGIN=${PUBLIC_ORIGIN:-}
+      # Optional: lets internet visitors (with Funnel on) sign in to the whole app. Keep it in .env.
+      - APP_PASSWORD=${APP_PASSWORD:-}
       # Optional: turns on the AI trip planner. Put it in .env, never in this file.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - AERODATABOX_API_KEY=${AERODATABOX_API_KEY:-}
