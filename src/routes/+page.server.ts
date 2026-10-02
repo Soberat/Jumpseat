@@ -4,7 +4,7 @@ import { flight, trip } from '#lib/server/db/schema.ts';
 import { DEFAULT_HOME, parseOrigin, tripRoute } from '#lib/trip-route.ts';
 import { asc } from 'drizzle-orm';
 import { geocode } from '#lib/server/open-meteo.ts';
-import { field } from '#lib/server/trips.ts';
+import { field, resolveStops } from '#lib/server/trips.ts';
 import { parseWhen, whenSortKey } from '#lib/when.ts';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -28,8 +28,12 @@ export const load: PageServerLoad = async () => {
 				...t,
 				from: route?.home.code ?? t.origin ?? DEFAULT_HOME,
 				fromLabel: route?.home.label ?? '',
-				to: route?.destination.code ?? t.destination.slice(0, 3).toUpperCase(),
-				toLabel: route?.destination.label ?? t.destination
+				to:
+					(route?.destination.code ?? t.destination.slice(0, 3).toUpperCase()) +
+					(route?.stops.length ? ` +${route.stops.length}` : ''),
+				toLabel: route?.stops.length
+					? `${route.destination.label} + ${route.stops.length} more`
+					: (route?.destination.label ?? t.destination)
 			};
 		}),
 		today: new Date().toISOString().slice(0, 10)
@@ -50,7 +54,10 @@ export const actions: Actions = {
 		if ('error' in origin) return fail(400, { title, destination, error: origin.error });
 
 		// Weather and attractions need coordinates; a failed lookup just leaves them empty.
-		const place = await geocode(destination).catch(() => null);
+		const [place, stops] = await Promise.all([
+			geocode(destination).catch(() => null),
+			resolveStops(data)
+		]);
 
 		const [created] = await db
 			.insert(trip)
@@ -60,6 +67,7 @@ export const actions: Actions = {
 				latitude: place?.latitude ?? null,
 				longitude: place?.longitude ?? null,
 				timezone: place?.timezone ?? null,
+				stops,
 				...origin,
 				...when
 			})

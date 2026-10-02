@@ -28,6 +28,8 @@ export const trip = sqliteTable('trip', {
 	plannedPeriod: text('planned_period'),
 	// Airport code the trip starts from; null means the default home airport.
 	origin: text('origin'),
+	// Places the trip goes on to after the destination, in order: JSON TripStop[].
+	stops: text('stops'),
 	notes: text('notes'),
 	createdAt: createdAt()
 });

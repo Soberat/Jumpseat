@@ -134,3 +134,38 @@ export function pathFor(points: Point[], v: View): string {
 		})
 		.join(' ');
 }
+
+/**
+ * Where to cut the globe so a route draws in one piece where it can: the middle of
+ * the widest stretch of longitude no stop sits in. Kept in (-360, 0] so routes that
+ * never need it stay in ordinary -180…180 longitudes.
+ */
+export function seamFor(points: Point[]): number {
+	const lons = [...new Set(points.map((p) => wrapLon(p.lon, -180)))].sort((a, b) => a - b);
+	if (lons.length === 0) return -180;
+	let widest = -1;
+	let seam = lons[0] - 180;
+	lons.forEach((a, i) => {
+		const b = i + 1 < lons.length ? lons[i + 1] : lons[0] + 360;
+		if (b - a > widest) [widest, seam] = [b - a, (a + b) / 2];
+	});
+	return seam > 0 ? seam - 360 : seam;
+}
+
+/** The longitude moved into [seam, seam + 360). */
+export function wrapLon(lon: number, seam: number): number {
+	return seam + ((((lon - seam) % 360) + 360) % 360);
+}
+
+/** A line in seam longitudes, cut into pieces where it crosses the seam. */
+export function splitAtSeam(points: Point[], seam: number): Point[][] {
+	const pieces: Point[][] = [[]];
+	let prev: Point | null = null;
+	for (const p of points) {
+		const q = { ...p, lon: wrapLon(p.lon, seam) };
+		if (prev && Math.abs(q.lon - prev.lon) > 180) pieces.push([]);
+		pieces.at(-1)!.push(q);
+		prev = q;
+	}
+	return pieces;
+}

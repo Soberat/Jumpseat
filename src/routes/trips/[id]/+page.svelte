@@ -17,6 +17,8 @@
 	import TripHero from '#lib/components/TripHero.svelte';
 	import TripTimeline from '#lib/components/TripTimeline.svelte';
 	import OriginField from '#lib/components/OriginField.svelte';
+	import StopsField from '#lib/components/StopsField.svelte';
+	import { readStops } from '#lib/trip-route.ts';
 	import { bestOptions, ODDS_LABELS, oddsFor, type Odds } from '#lib/standby.ts';
 	import type { PageProps } from './$types';
 
@@ -269,6 +271,9 @@
 			Destination
 			<input name="destination" required value={data.trip.destination} />
 		</label>
+		{#key data.trip}
+			<StopsField stops={readStops(data.trip.stops)} />
+		{/key}
 		<OriginField value={data.trip.origin} />
 		{#key data.trip}
 			<TripWhenFields when={data.trip} today={data.today} />

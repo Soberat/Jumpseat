@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { airportForPlace, placeCode } from './airports.ts';
 import { countdown } from './countdown.ts';
-import { parseOrigin, tripRoute } from './trip-route.ts';
-import { distanceKm, dotsInView, frame, greatCircle, landDots, project } from './route.ts';
+import { parseOrigin, readStops, tripRoute } from './trip-route.ts';
+import {
+	distanceKm,
+	dotsInView,
+	frame,
+	greatCircle,
+	landDots,
+	project,
+	seamFor,
+	splitAtSeam,
+	wrapLon
+} from './route.ts';
 
 const FRA = { lat: 50.03, lon: 8.57 };
 const LIS = { lat: 38.77, lon: -9.13 };
@@ -109,9 +119,78 @@ describe('tripRoute', () => {
 		expect(parseOrigin('Atlantis')).toHaveProperty('error');
 	});
 
+	describe('multi-stop trips', () => {
+		const world = {
+			destination: 'San Francisco',
+			latitude: 37.77,
+			longitude: -122.42,
+			origin: null,
+			stops: JSON.stringify([
+				{ name: 'Sydney', lat: -33.87, lon: 151.21 },
+				{ name: 'Singapore', lat: null, lon: null },
+				{ name: 'Atlantis', lat: null, lon: null }
+			])
+		};
+
+		it('plans every hop and the way home', () => {
+			const r = tripRoute(world, [])!;
+			expect(r.stops.map((s) => s.code)).toEqual(['SYD', 'SIN']);
+			expect(r.legs.map((l) => `${l.from.code}-${l.to.code}`)).toEqual([
+				'KRK-SFO',
+				'SFO-SYD',
+				'SYD-SIN',
+				'SIN-KRK'
+			]);
+			expect(r.legs.every((l) => l.planned)).toBe(true);
+			expect(r.distanceKm).toBeGreaterThan(35000);
+		});
+
+		it('counts hops flown through a connection', () => {
+			const r = tripRoute(world, [
+				{ origin: 'KRK', destination: 'FRA', standby: true, flightNumber: 'LH1365' },
+				{ origin: 'FRA', destination: 'SFO', standby: true, flightNumber: 'LH454' }
+			])!;
+			expect(r.legs.map((l) => `${l.from.code}-${l.to.code}${l.planned ? '?' : ''}`)).toEqual([
+				'KRK-FRA',
+				'FRA-SFO',
+				'SFO-SYD?',
+				'SYD-SIN?',
+				'SIN-KRK?'
+			]);
+		});
+
+		it('ignores broken stop data', () => {
+			expect(readStops('not json')).toEqual([]);
+			expect(readStops('[{"name":""},{"name":"Oslo","lat":null,"lon":null}]')).toHaveLength(1);
+		});
+	});
+
 	it('gives up without any coordinates', () => {
 		expect(
 			tripRoute({ destination: 'Nowhere', latitude: null, longitude: null, origin: null }, [])
 		).toBeNull();
+	});
+});
+
+describe('seamFor', () => {
+	it('leaves ordinary routes in ordinary longitudes', () => {
+		const seam = seamFor([
+			{ lat: 50.08, lon: 19.78 },
+			{ lat: 38.77, lon: -9.13 }
+		]);
+		expect(wrapLon(19.78, seam)).toBeCloseTo(19.78);
+		expect(wrapLon(-9.13, seam)).toBeCloseTo(-9.13);
+	});
+
+	it('cuts a round-the-world trip over the Atlantic so the Pacific stays whole', () => {
+		const krk = { lat: 50, lon: 19.8 };
+		const sfo = { lat: 37.6, lon: -122.4 };
+		const syd = { lat: -33.9, lon: 151.2 };
+		const seam = seamFor([krk, sfo, syd, { lat: 1.4, lon: 104 }]);
+		expect(seam).toBeGreaterThan(-122.4);
+		expect(seam).toBeLessThan(19.8);
+		// SFO → SYD is one piece; KRK → SFO crosses the cut.
+		expect(splitAtSeam(greatCircle(sfo, syd), seam)).toHaveLength(1);
+		expect(splitAtSeam(greatCircle(krk, sfo), seam)).toHaveLength(2);
 	});
 });

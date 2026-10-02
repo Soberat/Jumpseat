@@ -94,7 +94,9 @@
 		{/if}
 		{#if route && route.distanceKm > 0}
 			<span class="rounded-full bg-black/30 px-2.5 py-1 backdrop-blur"
-				>{formatNumber(route.distanceKm)} km from {route.home.code}</span
+				>{formatNumber(route.distanceKm)} km {route.stops.length
+					? 'all the way round'
+					: `from ${route.home.code}`}</span
 			>
 		{/if}
 	</div>
@@ -118,7 +120,7 @@
 				<span
 					class="font-mono font-bold tracking-wider"
 					style="view-transition-name: trip-codes-{id}"
-					>{route.home.code} ✈ {route.destination.code}</span
+					>{[route.home, route.destination, ...route.stops].map((s) => s.code).join(' ✈ ')}</span
 				>
 				<span aria-hidden="true">·</span>
 			{/if}

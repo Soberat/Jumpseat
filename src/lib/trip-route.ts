@@ -18,6 +18,8 @@ export interface RouteLeg {
 export interface TripRoute {
 	home: RouteStop;
 	destination: RouteStop;
+	/** Further stops after the destination, in order, for trips that go on (a round-the-world). */
+	stops: RouteStop[];
 	legs: RouteLeg[];
 	distanceKm: number;
 }
@@ -27,12 +29,40 @@ export const DEFAULT_HOME = 'KRK';
 
 const stop = (a: Airport): RouteStop => ({ code: a.code, label: a.city, lat: a.lat, lon: a.lon });
 
+/** A place the trip goes on to after its destination; coordinates come from a lookup. */
+export interface TripStop {
+	name: string;
+	lat: number | null;
+	lon: number | null;
+}
+
+/** Reads the stored stops column (JSON); anything unreadable is no stops. */
+export function readStops(json: string | null | undefined): TripStop[] {
+	if (!json) return [];
+	try {
+		const parsed: unknown = JSON.parse(json);
+		return Array.isArray(parsed)
+			? parsed.filter((s): s is TripStop => typeof s?.name === 'string' && s.name.trim() !== '')
+			: [];
+	} catch {
+		return [];
+	}
+}
+
+/** "San Francisco → Sydney → Singapore" */
+export function describeStops(destination: string, stops: TripStop[]): string {
+	return [destination, ...stops.map((s) => s.name)].join(' → ');
+}
+
+const NEAR_KM = 150;
+
 export function tripRoute(
 	trip: {
 		destination: string;
 		latitude: number | null;
 		longitude: number | null;
 		origin: string | null;
+		stops?: string | null;
 	},
 	flights: { origin: string; destination: string; standby: boolean; flightNumber: string }[]
 ): TripRoute | null {
@@ -59,20 +89,44 @@ export function tripRoute(
 	}
 
 	// Name the destination after the airport you land at when it's close by.
-	const landing = legs
-		.map((l) => l.to)
-		.find((a) => a.code !== home.code && distanceKm(a, coords) < 150);
-	const destination: RouteStop = {
-		code: landing?.code ?? known?.code ?? placeCode(trip.destination),
-		label: trip.destination.split(',')[0],
-		lat: coords.lat,
-		lon: coords.lon
+	const place = (name: string, at: Point, known: Airport | null): RouteStop => {
+		const landing = legs
+			.map((l) => l.to)
+			.find((a) => a.code !== home.code && distanceKm(a, at) < NEAR_KM);
+		return {
+			code: landing?.code ?? known?.code ?? placeCode(name),
+			label: name.split(',')[0],
+			lat: at.lat,
+			lon: at.lon
+		};
 	};
+	// Name the destination after the airport you land at when it's close by.
+	const destination = place(trip.destination, coords, known);
+	const stops = readStops(trip.stops).flatMap((s) => {
+		const airport = airportForPlace(s.name);
+		const at = s.lat !== null && s.lon !== null ? { lat: s.lat, lon: s.lon } : airport;
+		return at ? [place(s.name, at, airport)] : [];
+	});
 
-	if (legs.length === 0) {
-		legs.push({ from: home, to: destination, planned: true, standby: false, flightNumber: null });
+	if (stops.length === 0) {
+		if (legs.length === 0) {
+			legs.push({ from: home, to: destination, planned: true, standby: false, flightNumber: null });
+		}
+		return { home, destination, stops, legs, distanceKm: distanceKm(home, destination) };
 	}
-	return { home, destination, legs, distanceKm: distanceKm(home, destination) };
+
+	// A multi-stop trip: home, each stop in turn, and back home. Hops no flight covers yet
+	// are drawn as planned. A hop counts as flown when a flight leaves near its start and
+	// one lands near its end, so connections (KRK→FRA→SFO) still count.
+	const near = (a: Point, b: Point) => distanceKm(a, b) < NEAR_KM;
+	const chain = [home, destination, ...stops, home];
+	for (let i = 0; i + 1 < chain.length; i++) {
+		const [a, b] = [chain[i], chain[i + 1]];
+		const flown = legs.some((l) => near(l.from, a)) && legs.some((l) => near(l.to, b));
+		if (!flown) legs.push({ from: a, to: b, planned: true, standby: false, flightNumber: null });
+	}
+	const total = chain.slice(1).reduce((sum, p, i) => sum + distanceKm(chain[i], p), 0);
+	return { home, destination, stops, legs, distanceKm: total };
 }
 
 /**

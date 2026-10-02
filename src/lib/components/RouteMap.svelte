@@ -1,6 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { dotsInView, frame, greatCircle, pathFor, project } from '#lib/route.ts';
+	import {
+		dotsInView,
+		frame,
+		greatCircle,
+		pathFor,
+		project,
+		seamFor,
+		splitAtSeam,
+		wrapLon,
+		type Point
+	} from '#lib/route.ts';
 	import type { TripRoute } from '#lib/trip-route.ts';
 
 	let {
@@ -23,10 +33,19 @@
 		motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
 	});
 
+	const places = $derived([
+		route.home,
+		route.destination,
+		...route.stops,
+		...route.legs.flatMap((l) => [l.from, l.to])
+	]);
+	// Cut the world where the route isn't, so a trip over the Pacific draws in one piece.
+	const seam = $derived(seamFor(places));
+	const at = (p: Point) => project({ ...p, lon: wrapLon(p.lon, seam) }, view);
 	const arcs = $derived(route.legs.map((l) => greatCircle(l.from, l.to)));
 	const view = $derived(
 		frame(
-			[route.home, route.destination, ...route.legs.flatMap((l) => [l.from, l.to]), ...arcs.flat()],
+			[...places, ...arcs.flat()].map((p) => ({ ...p, lon: wrapLon(p.lon, seam) })),
 			width,
 			height,
 			compact ? 22 : 26,
@@ -40,18 +59,18 @@
 			(s) => s.code !== route.destination.code
 		)
 	);
-	const dest = $derived(project(route.destination, view));
+	const dest = $derived(at(route.destination));
 	// Arcs lift off the map a little, like a flight path drawn on a chart.
 	const lifted = $derived(
 		arcs.map((arc) => {
 			const n = arc.length - 1;
-			return pathFor(
-				arc.map((p, i) => ({
-					...p,
-					lat: p.lat + Math.sin((Math.PI * i) / n) * 0.05 * view.scale * width
-				})),
-				view
-			);
+			const raised = arc.map((p, i) => ({
+				...p,
+				lat: p.lat + Math.sin((Math.PI * i) / n) * 0.05 * view.scale * width
+			}));
+			return splitAtSeam(raised, seam)
+				.map((piece) => pathFor(piece, view))
+				.join(' ');
 		})
 	);
 	// Out-and-back legs share a line: one plane per pair is enough.
@@ -153,7 +172,7 @@
 	{/each}
 
 	{#each stops as s (s.code)}
-		{@const [x, y] = project(s, view)}
+		{@const [x, y] = at(s)}
 		<circle cx={x} cy={y} r={compact ? 9 : 6} class="fill-white" />
 		<text
 			{x}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import BoardingPass from '#lib/components/BoardingPass.svelte';
 	import OriginField from '#lib/components/OriginField.svelte';
+	import StopsField from '#lib/components/StopsField.svelte';
 	import TripWhenFields from '#lib/components/TripWhenFields.svelte';
 	import { enhance } from '$app/forms';
 	import type { PageProps } from './$types';
@@ -61,6 +62,7 @@
 			Destination
 			<input name="destination" required value={form?.destination ?? ''} placeholder="Lisbon" />
 		</label>
+		<StopsField />
 		<OriginField />
 		<TripWhenFields today={data.today} />
 		{#if form?.error}

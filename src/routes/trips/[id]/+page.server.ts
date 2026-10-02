@@ -16,8 +16,14 @@ import { EXPENSE_CATEGORIES, parseAmount, type ExpenseCategory } from '#lib/mone
 import { geocode, getTripWeather } from '#lib/server/open-meteo.ts';
 import { getNearbySights } from '#lib/server/wikipedia.ts';
 import { parseWhen, whenWindow } from '#lib/when.ts';
-import { field, getLoadsForFlights, getTripPlan, optionalField } from '#lib/server/trips.ts';
-import { parseOrigin, tripRoute } from '#lib/trip-route.ts';
+import {
+	field,
+	getLoadsForFlights,
+	getTripPlan,
+	optionalField,
+	resolveStops
+} from '#lib/server/trips.ts';
+import { parseOrigin, readStops, tripRoute } from '#lib/trip-route.ts';
 import { buildGantt } from '#lib/gantt.ts';
 import { scheduleTrip } from '#lib/schedule.ts';
 import { parseDuration } from '#lib/duration.ts';
@@ -144,9 +150,10 @@ export const actions: Actions = {
 				timezone: place?.timezone ?? null
 			};
 		}
+		const stops = await resolveStops(data, readStops(current.stops));
 		await db
 			.update(trip)
-			.set({ title, destination, ...origin, ...when, ...coords })
+			.set({ title, destination, stops, ...origin, ...when, ...coords })
 			.where(eq(trip.id, params.id));
 		return { tripSaved: true };
 	},
