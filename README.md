@@ -63,6 +63,10 @@ change it). Amounts are converted with the ECB's daily reference rates from
 [Frankfurter](https://frankfurter.dev) (free, no key), at the rate for the day you spent the
 money; rates are cached in the database, so it keeps working offline.
 
+A cost entered on a flight, stay or other booking is an expense too (marked "booking"), so a
+shared hotel counts in settle up once it's paid. Anything still to pay shows in a **To pay** list,
+soonest due date first, and only counts towards settling up after you mark it paid.
+
 Entries, flights and expenses can carry links and photos (receipts, booking confirmations).
 Photos are shrunk to 2000px in the browser and stored in an `uploads` folder next to the
 database, so they're part of the `jumpseat-data` volume and its backups.

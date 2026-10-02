@@ -3,8 +3,18 @@
 	import { DEFAULT_CURRENCY, type Cost } from '#lib/cost.ts';
 	import { minorDigits, COMMON_CURRENCIES } from '#lib/money.ts';
 
-	let { cost = null, currency = DEFAULT_CURRENCY }: { cost?: Cost | null; currency?: string } =
-		$props();
+	let {
+		cost = null,
+		currency = DEFAULT_CURRENCY,
+		members = [],
+		paidBy = null
+	}: {
+		cost?: Cost | null;
+		currency?: string;
+		/** People on the trip: with two or more, the cost can be split (between everyone). */
+		members?: { id: string; name: string }[];
+		paidBy?: string | null;
+	} = $props();
 
 	const uid = $props.id();
 	const amountOf = (c: Cost | null) =>
@@ -58,6 +68,17 @@
 				aria-label="Pay by"
 				class="min-w-0 flex-1"
 			/>
+		</label>
+	{/if}
+	{#if members.length >= 2}
+		<label class="col-span-6 flex items-center gap-2">
+			<span class="shrink-0">Paid by</span>
+			<select name="paidBy" class="min-w-0 flex-1">
+				<option value="">Not shared</option>
+				{#each members as m (m.id)}
+					<option value={m.id} selected={m.id === paidBy}>{m.name}, split between everyone</option>
+				{/each}
+			</select>
 		</label>
 	{/if}
 </fieldset>

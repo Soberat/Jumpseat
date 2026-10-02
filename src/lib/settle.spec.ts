@@ -88,6 +88,13 @@ describe('settle', () => {
 		expect(s.skipped).toBe(1);
 		expect(s.transfers).toEqual([]);
 	});
+
+	it('leaves out bookings nobody has paid yet', () => {
+		const hotel = { ...e('hotel', 40000, 'PLN', 'miro'), paymentStatus: 'due' as const };
+		const s = settle([hotel], ['miro', 'ola'], 'PLN', () => RATES);
+		expect(s.converted.hotel).toBe(40000);
+		expect(s.transfers).toEqual([]);
+	});
 });
 
 describe('settleUp', () => {

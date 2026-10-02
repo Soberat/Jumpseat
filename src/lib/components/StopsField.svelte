@@ -27,7 +27,7 @@
 					<button
 						type="button"
 						onclick={() => names.splice(i, 1)}
-						class="px-1 text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+						class="min-h-8 min-w-8 px-1 text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
 						aria-label="Remove stop {i + 2}">×</button
 					>
 				</li>

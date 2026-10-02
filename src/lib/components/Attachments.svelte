@@ -82,7 +82,7 @@
 					>
 						<input type="hidden" name="id" value={p.id} />
 						<button
-							class="flex size-5 items-center justify-center rounded-full bg-slate-900/70 text-xs text-white hover:bg-red-600"
+							class="flex size-6 items-center justify-center rounded-full bg-slate-900/70 text-xs text-white hover:bg-red-600"
 							aria-label="Remove photo">×</button
 						>
 					</form>
@@ -108,7 +108,7 @@
 					<form method="POST" action="?/deleteAttachment" use:enhance class="ml-auto">
 						<input type="hidden" name="id" value={l.id} />
 						<button
-							class="px-1 text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+							class="min-h-8 min-w-8 px-1 text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
 							aria-label="Remove link">×</button
 						>
 					</form>

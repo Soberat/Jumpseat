@@ -5,7 +5,9 @@ import { attachment, expense, trip, tripMember, type Expense } from './db/schema
 import { field, optionalField } from './trips.ts';
 import { ratesFor } from './fx.ts';
 import { pruneUploads, savePhoto } from './uploads.ts';
-import { convert, rateDate, settle, type Rates } from '#lib/settle.ts';
+import { rateDate, settle, type Rates } from '#lib/settle.ts';
+import type { Cost } from '#lib/cost.ts';
+import type { ExpenseCategory } from '#lib/money.ts';
 
 const CURRENCY_RE = /^[A-Z]{3}$/;
 
@@ -13,12 +15,7 @@ const CURRENCY_RE = /^[A-Z]{3}$/;
  * Everything the Expenses card needs beyond the raw rows: who's on the trip, what
  * each expense comes to in the settle currency, and who owes whom.
  */
-export async function loadMoney(
-	tripId: string,
-	settleCurrency: string,
-	expenses: Expense[],
-	costs: { costMinor: number | null; costCurrency: string | null; paymentStatus: string | null }[]
-) {
+export async function loadMoney(tripId: string, settleCurrency: string, expenses: Expense[]) {
 	const members = await db
 		.select()
 		.from(tripMember)
@@ -35,23 +32,14 @@ export async function loadMoney(
 		ratesOn
 	);
 	const spent = expenses.filter((e) => !e.transfer);
-	const total = sumConverted(spent.map((e) => settlement.converted[e.id]));
-	// Bookings are converted at today's rates.
-	const priced = costs.filter((c) => c.costMinor !== null && c.costCurrency);
-	const bookings = (status: 'paid' | 'due') =>
-		sumConverted(
-			priced
-				.filter((c) => (c.paymentStatus === 'due') === (status === 'due'))
-				.map((c) => convert(c.costMinor!, c.costCurrency!, settleCurrency, ratesOn(today)))
-		);
-
 	return {
 		members,
 		settleCurrency,
 		settlement,
-		total,
-		bookingsPaid: bookings('paid'),
-		bookingsDue: bookings('due'),
+		total: sumConverted(spent.map((e) => settlement.converted[e.id])),
+		toPay: sumConverted(
+			spent.filter((e) => e.paymentStatus === 'due').map((e) => settlement.converted[e.id])
+		),
 		ratesMissing: rates.get(today) === null
 	};
 }
@@ -77,6 +65,8 @@ export async function readSplit(
 	const ids = members.map((m) => m.id);
 	const paidBy = optionalField(data, 'paidBy');
 	if (!paidBy || !ids.includes(paidBy)) return { paidBy: null, splitWith: null };
+	// Forms that don't ask who shares it split it between everyone.
+	if (!data.has('splitShown')) return { paidBy, splitWith: null };
 	const chosen = data
 		.getAll('splitWith')
 		.map(String)
@@ -111,6 +101,14 @@ export const moneyActions = {
 		await db.update(trip).set({ settleCurrency: currency }).where(eq(trip.id, tripId));
 	},
 
+	async markPaid(tripId: string, request: Request) {
+		const id = field(await request.formData(), 'id');
+		await db
+			.update(expense)
+			.set({ paymentStatus: 'paid', dueDate: null })
+			.where(and(eq(expense.id, id), eq(expense.tripId, tripId)));
+	},
+
 	/** Records one "settle up" payment as a transfer between two people. */
 	async settleTransfer(tripId: string, request: Request) {
 		const data = await request.formData();
@@ -135,6 +133,54 @@ export const moneyActions = {
 		});
 	}
 };
+
+const BOOKING_CATEGORY: Record<string, ExpenseCategory> = {
+	flight: 'flights',
+	stay: 'stay',
+	car: 'transport',
+	transport: 'transport',
+	restaurant: 'food',
+	other: 'activities'
+};
+
+/**
+ * Sets the cost of a booking (a flight or a timeline entry), kept as the expense linked
+ * to it: created, updated, or removed when the cost is cleared.
+ */
+export async function saveBookingCost(
+	tripId: string,
+	booking: { target: 'flight' | 'item'; id: string; label: string; kind: string },
+	cost: Cost,
+	split: { paidBy: string | null; splitWith: string | null } | null
+): Promise<void> {
+	const link =
+		booking.target === 'flight' ? eq(expense.flightId, booking.id) : eq(expense.itemId, booking.id);
+	const where = and(eq(expense.tripId, tripId), link);
+	if (cost.costMinor === null || !cost.costCurrency) {
+		await db.delete(expense).where(where);
+		return;
+	}
+	const values = {
+		amountMinor: cost.costMinor,
+		currency: cost.costCurrency,
+		paymentStatus: cost.paymentStatus ?? 'paid',
+		dueDate: cost.dueDate,
+		...(split ?? {})
+	};
+	const [existing] = await db.select({ id: expense.id }).from(expense).where(where);
+	if (existing) {
+		await db.update(expense).set(values).where(eq(expense.id, existing.id));
+		return;
+	}
+	await db.insert(expense).values({
+		tripId,
+		description: booking.label,
+		category: BOOKING_CATEGORY[booking.kind] ?? 'other',
+		flightId: booking.target === 'flight' ? booking.id : null,
+		itemId: booking.target === 'item' ? booking.id : null,
+		...values
+	});
+}
 
 const TARGETS = ['item', 'flight', 'expense'] as const;
 

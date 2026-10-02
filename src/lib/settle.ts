@@ -48,6 +48,8 @@ interface SettleExpense {
 	splitWith: string | null;
 	spentOn: string | null;
 	createdAt: Date;
+	/** Still to pay: nobody has paid yet, so it isn't settled. */
+	paymentStatus?: 'paid' | 'due';
 }
 
 export interface Settlement {
@@ -64,7 +66,7 @@ export interface Settlement {
 
 /**
  * Adds up who paid what and who shares it, in one currency. Only expenses with a payer
- * count; transfers (paying someone back) are expenses split with just the person paid.
+ * count, once paid; transfers (paying someone back) are expenses split with just the person paid.
  */
 export function settle(
 	expenses: SettleExpense[],
@@ -78,7 +80,7 @@ export function settle(
 	for (const e of expenses) {
 		const minor = convert(e.amountMinor, e.currency, currency, ratesOn(rateDate(e)));
 		converted[e.id] = minor;
-		if (!e.paidBy || !balance.has(e.paidBy)) continue;
+		if (!e.paidBy || !balance.has(e.paidBy) || e.paymentStatus === 'due') continue;
 		const among = splitIds(e.splitWith, memberIds);
 		if (among.length === 0) continue;
 		if (minor === null) {

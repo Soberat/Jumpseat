@@ -11,7 +11,8 @@
 		today,
 		tripStart,
 		lookup = false,
-		currency
+		currency,
+		members = []
 	}: {
 		error?: string;
 		today: string;
@@ -20,6 +21,8 @@
 		lookup?: boolean;
 		/** Default for the cost fields: the last one used on this trip. */
 		currency?: string;
+		/** People on the trip, for who paid. */
+		members?: { id: string; name: string }[];
 	} = $props();
 
 	// Bumped after each successful add, so the cost fields start empty again.
@@ -202,7 +205,7 @@
 			<label class="flex items-center gap-2">
 				<input type="checkbox" name="standby" checked /> Standby
 			</label>
-			{#key added}<CostFields {currency} />{/key}
+			{#key added}<CostFields {currency} {members} />{/key}
 			{#if lookupNote}
 				<p class="col-span-full text-sm text-slate-600 dark:text-slate-300">{lookupNote}</p>
 			{/if}
@@ -312,7 +315,7 @@
 			<label class="flex flex-col gap-1">
 				Link <input name="url" type="url" placeholder="https://" />
 			</label>
-			{#key added}<CostFields {currency} />{/key}
+			{#key added}<CostFields {currency} {members} />{/key}
 			<label class="col-span-full flex flex-col gap-1">
 				Notes <textarea name="notes" rows="2"></textarea>
 			</label>

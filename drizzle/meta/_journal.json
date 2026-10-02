@@ -85,6 +85,13 @@
       "when": 1790965550571,
       "tag": "0011_members_rates_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790966501079,
+      "tag": "0012_booking_costs_as_expenses",
+      "breakpoints": true
     }
   ]
 }

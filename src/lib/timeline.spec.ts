@@ -24,10 +24,6 @@ function item(over: Partial<TimelineItem>): TimelineItem {
 		notes: null,
 		day: null,
 		durationMinutes: null,
-		costMinor: null,
-		costCurrency: null,
-		paymentStatus: null,
-		dueDate: null,
 		createdAt: created,
 		...over
 	};
@@ -45,10 +41,6 @@ function flight(over: Partial<Flight>): Flight {
 		arrivalDate: null,
 		arrivalTime: null,
 		durationMinutes: null,
-		costMinor: null,
-		costCurrency: null,
-		paymentStatus: null,
-		dueDate: null,
 		standby: true,
 		createdAt: created,
 		...over

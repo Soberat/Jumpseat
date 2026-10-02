@@ -1,5 +1,5 @@
 import { formatNumericDate } from './format.ts';
-import { formatMoney, parseAmount, totalsByCurrency } from './money.ts';
+import { formatMoney, parseAmount } from './money.ts';
 
 /** What a booking costs and whether it's settled: paid already, or to pay (by a date, maybe). */
 export const PAYMENT_STATUSES = ['paid', 'due'] as const;
@@ -63,38 +63,33 @@ export function describeCost(
 	};
 }
 
-export interface CostSummary {
-	paid: { currency: string; minor: number }[];
-	due: { currency: string; minor: number }[];
-	/** The soonest payment still to make, if any has a date. */
-	next: { label: string; date: string; amount: string } | null;
-	overdue: number;
+/** A booking's linked expense, read as a cost. */
+export function costOf(
+	e:
+		| {
+				amountMinor: number;
+				currency: string;
+				paymentStatus: PaymentStatus;
+				dueDate: string | null;
+		  }
+		| undefined
+): Cost {
+	return e
+		? {
+				costMinor: e.amountMinor,
+				costCurrency: e.currency,
+				paymentStatus: e.paymentStatus,
+				dueDate: e.dueDate
+			}
+		: NO_COST;
 }
 
-/** Adds up booking costs: what's paid and what's still to pay. */
-export function summariseCosts(
-	entries: (Cost & { label: string })[],
-	today: string
-): CostSummary | null {
-	const priced = entries.flatMap((e) =>
-		e.costMinor !== null && e.costCurrency
-			? [{ ...e, amountMinor: e.costMinor, currency: e.costCurrency }]
-			: []
-	);
-	if (priced.length === 0) return null;
-	const due = priced.filter((e) => e.paymentStatus === 'due');
-	const dated = due.filter((e) => e.dueDate).sort((a, b) => a.dueDate!.localeCompare(b.dueDate!));
-	const upcoming = dated.find((e) => e.dueDate! >= today) ?? null;
-	return {
-		paid: totalsByCurrency(priced.filter((e) => e.paymentStatus !== 'due')),
-		due: totalsByCurrency(due),
-		next: upcoming
-			? {
-					label: upcoming.label,
-					date: upcoming.dueDate!,
-					amount: formatMoney(upcoming.amountMinor, upcoming.currency)
-				}
-			: null,
-		overdue: dated.filter((e) => e.dueDate! < today).length
-	};
+/** Payment status and due date from a form, for an expense entered directly. */
+export function dueFields(data: FormData): {
+	paymentStatus: PaymentStatus;
+	dueDate: string | null;
+} {
+	const due = data.get('paymentStatus') === 'due';
+	const date = String(data.get('dueDate') ?? '');
+	return { paymentStatus: due ? 'due' : 'paid', dueDate: due && DATE_RE.test(date) ? date : null };
 }

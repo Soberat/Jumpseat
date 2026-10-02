@@ -29,12 +29,13 @@ import { buildGantt } from '#lib/gantt.ts';
 import { scheduleTrip } from '#lib/schedule.ts';
 import { parseDuration } from '#lib/duration.ts';
 import { flightLookupEnabled } from '#lib/server/flight-lookup.ts';
-import { NO_COST, parseCost, summariseCosts } from '#lib/cost.ts';
+import { NO_COST, dueFields, parseCost } from '#lib/cost.ts';
 import {
 	attachmentActions,
 	loadMoney,
 	moneyActions,
-	readSplit
+	readSplit,
+	saveBookingCost
 } from '#lib/server/sharing-costs.ts';
 import { pruneUploads, removeTripUploads } from '#lib/server/uploads.ts';
 import {
@@ -93,10 +94,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			.where(eq(attachment.tripId, params.id))
 			.orderBy(asc(attachment.createdAt))
 	]);
-	const money = await loadMoney(params.id, found.trip.settleCurrency, expenses, [
-		...found.flights,
-		...found.items.filter((i) => i.status === 'booked')
-	]);
+	const money = await loadMoney(params.id, found.trip.settleCurrency, expenses);
 
 	const origin = PUBLIC_ORIGIN ?? url.origin;
 	const schedule = scheduleTrip(found.trip, found.flights, found.items);
@@ -125,21 +123,8 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			url: `${origin}/s/${s.token}`
 		})),
 		flightLookup: flightLookupEnabled(),
-		bookings: summariseCosts(
-			[
-				...found.flights.map((f) => ({
-					...f,
-					label: `${f.flightNumber} ${f.origin}→${f.destination}`
-				})),
-				...found.items.filter((i) => i.status === 'booked').map((i) => ({ ...i, label: i.title }))
-			],
-			new Date().toISOString().slice(0, 10)
-		),
-		// Most bookings on a trip are in one currency: offer the last one used.
-		lastCurrency:
-			[...found.flights, ...found.items]
-				.filter((x) => x.costCurrency)
-				.sort((a, b) => +b.createdAt - +a.createdAt)[0]?.costCurrency ?? undefined
+		// Most costs on a trip are in one currency: offer the last one used.
+		lastCurrency: expenses.toSorted((x, y) => +y.createdAt - +x.createdAt)[0]?.currency
 	};
 };
 
@@ -188,19 +173,34 @@ export const actions: Actions = {
 		}
 		const cost = parseCost(data);
 		if ('error' in cost) return fail(400, { flightError: cost.error });
-		await db.insert(flight).values({
-			...cost,
-			tripId: params.id,
-			flightNumber,
-			origin,
-			destination,
-			departureDate,
-			departureTime: optionalField(data, 'departureTime'),
-			arrivalDate: optionalField(data, 'arrivalDate'),
-			arrivalTime: optionalField(data, 'arrivalTime'),
-			durationMinutes: parseDuration(field(data, 'durationMinutes')),
-			standby: data.get('standby') === 'on'
-		});
+		const split = await readSplit(params.id, data);
+		if ('error' in split) return fail(400, { flightError: split.error });
+		const [added] = await db
+			.insert(flight)
+			.values({
+				tripId: params.id,
+				flightNumber,
+				origin,
+				destination,
+				departureDate,
+				departureTime: optionalField(data, 'departureTime'),
+				arrivalDate: optionalField(data, 'arrivalDate'),
+				arrivalTime: optionalField(data, 'arrivalTime'),
+				durationMinutes: parseDuration(field(data, 'durationMinutes')),
+				standby: data.get('standby') === 'on'
+			})
+			.returning({ id: flight.id });
+		await saveBookingCost(
+			params.id,
+			{
+				target: 'flight',
+				id: added.id,
+				label: `${flightNumber} ${origin}→${destination}`,
+				kind: 'flight'
+			},
+			cost,
+			split
+		);
 	},
 
 	addItem: async ({ params, request }) => {
@@ -230,26 +230,36 @@ export const actions: Actions = {
 		}
 		const cost = parseCost(data);
 		if ('error' in cost) return fail(400, { itemError: cost.error });
+		const split = await readSplit(params.id, data);
+		if ('error' in split) return fail(400, { itemError: split.error });
 
-		await db.insert(timelineItem).values({
-			...cost,
-			tripId: params.id,
-			kind,
-			title,
-			status: data.get('status') === 'idea' ? 'idea' : 'booked',
-			startDate,
-			startTime: startDate ? optionalField(data, 'startTime') : null,
-			durationMinutes: spans ? null : parseDuration(field(data, 'duration')),
-			endDate,
-			endTime: endDate ? optionalField(data, 'endTime') : null,
-			location: kind === 'transport' ? null : optionalField(data, 'location'),
-			mode,
-			fromPlace,
-			toPlace,
-			reference: optionalField(data, 'reference'),
-			url,
-			notes: optionalField(data, 'notes')
-		});
+		const [added] = await db
+			.insert(timelineItem)
+			.values({
+				tripId: params.id,
+				kind,
+				title,
+				status: data.get('status') === 'idea' ? 'idea' : 'booked',
+				startDate,
+				startTime: startDate ? optionalField(data, 'startTime') : null,
+				durationMinutes: spans ? null : parseDuration(field(data, 'duration')),
+				endDate,
+				endTime: endDate ? optionalField(data, 'endTime') : null,
+				location: kind === 'transport' ? null : optionalField(data, 'location'),
+				mode,
+				fromPlace,
+				toPlace,
+				reference: optionalField(data, 'reference'),
+				url,
+				notes: optionalField(data, 'notes')
+			})
+			.returning({ id: timelineItem.id });
+		await saveBookingCost(
+			params.id,
+			{ target: 'item', id: added.id, label: title, kind },
+			cost,
+			split
+		);
 	},
 
 	deleteItem: async ({ params, request }) => {
@@ -271,16 +281,14 @@ export const actions: Actions = {
 		const id = field(data, 'id');
 		const cost = data.get('clear') ? NO_COST : parseCost(data);
 		if ('error' in cost) return fail(400, { costError: cost.error, costFor: id });
-		await saveCost(params.id, field(data, 'target'), id, cost);
+		const split = await readSplit(params.id, data);
+		if ('error' in split) return fail(400, { costError: split.error, costFor: id });
+		const booking = await findBooking(params.id, field(data, 'target'), id);
+		if (!booking) return fail(404, { costError: 'That entry is gone.', costFor: id });
+		await saveBookingCost(params.id, booking, cost, split);
 	},
 
-	markPaid: async ({ params, request }) => {
-		const data = await request.formData();
-		await saveCost(params.id, field(data, 'target'), field(data, 'id'), {
-			paymentStatus: 'paid',
-			dueDate: null
-		});
-	},
+	markPaid: ({ params, request }) => moneyActions.markPaid(params.id, request),
 
 	logLoad: async ({ params, request }) => {
 		const data = await request.formData();
@@ -370,6 +378,7 @@ export const actions: Actions = {
 			currency,
 			category: EXPENSE_CATEGORIES.includes(category) ? category : 'other',
 			spentOn: optionalField(data, 'spentOn'),
+			...dueFields(data),
 			...split
 		});
 		return { expenseCurrency: currency };
@@ -410,21 +419,25 @@ export const actions: Actions = {
 	}
 };
 
-async function saveCost(
-	tripId: string,
-	target: string,
-	id: string,
-	cost: Partial<typeof NO_COST>
-): Promise<void> {
+/** The flight or entry a cost belongs to, with what its expense is called. */
+async function findBooking(tripId: string, target: string, id: string) {
 	if (target === 'flight') {
-		await db
-			.update(flight)
-			.set(cost)
+		const [f] = await db
+			.select()
+			.from(flight)
 			.where(and(eq(flight.id, id), eq(flight.tripId, tripId)));
-	} else {
-		await db
-			.update(timelineItem)
-			.set(cost)
-			.where(and(eq(timelineItem.id, id), eq(timelineItem.tripId, tripId)));
+		return f
+			? {
+					target: 'flight' as const,
+					id,
+					label: `${f.flightNumber} ${f.origin}→${f.destination}`,
+					kind: 'flight'
+				}
+			: null;
 	}
+	const [i] = await db
+		.select()
+		.from(timelineItem)
+		.where(and(eq(timelineItem.id, id), eq(timelineItem.tripId, tripId)));
+	return i ? { target: 'item' as const, id, label: i.title, kind: i.kind } : null;
 }

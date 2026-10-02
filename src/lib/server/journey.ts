@@ -6,7 +6,6 @@ import { field, getTripPlan, optionalField } from '#lib/server/trips.ts';
 import { getNearbySights } from '#lib/server/wikipedia.ts';
 import { scheduleTrip } from '#lib/schedule.ts';
 import { parseDuration } from '#lib/duration.ts';
-import { NO_COST } from '#lib/cost.ts';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -21,12 +20,11 @@ export async function journeyData(tripId: string, guest: 'view' | 'edit' | null 
 	const items = guest
 		? found.items.map((i) => ({
 				...i,
-				...NO_COST,
 				reference: null,
 				notes: guest === 'edit' ? i.notes : null
 			}))
 		: found.items;
-	const flights = guest ? found.flights.map((f) => ({ ...f, ...NO_COST })) : found.flights;
+	const flights = found.flights;
 	const schedule = scheduleTrip(found.trip, flights, items);
 	// Without real dates, days are numbered and drops set the trip day instead.
 	const numbered = !schedule.start || schedule.undated;

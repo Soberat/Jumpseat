@@ -36,15 +36,6 @@ export const trip = sqliteTable('trip', {
 	createdAt: createdAt()
 });
 
-/** What a booking costs and whether it's paid yet; see #lib/cost.ts. */
-const costColumns = () => ({
-	costMinor: integer('cost_minor'),
-	costCurrency: text('cost_currency'),
-	paymentStatus: text('payment_status', { enum: PAYMENT_STATUSES }),
-	// When it has to be paid, for 'due'.
-	dueDate: text('due_date')
-});
-
 /** One flight segment of a trip, booked or flown standby. */
 export const flight = sqliteTable('flight', {
 	id: id(),
@@ -61,7 +52,6 @@ export const flight = sqliteTable('flight', {
 	arrivalTime: text('arrival_time'),
 	durationMinutes: integer('duration_minutes'),
 	standby: integer('standby', { mode: 'boolean' }).notNull().default(false),
-	...costColumns(),
 	createdAt: createdAt()
 });
 
@@ -125,7 +115,6 @@ export const timelineItem = sqliteTable('timeline_item', {
 	day: integer('day'),
 	// How long it takes, for things that happen within a day (a tour, dinner).
 	durationMinutes: integer('duration_minutes'),
-	...costColumns(),
 	createdAt: createdAt()
 });
 
@@ -174,6 +163,12 @@ export const expense = sqliteTable('expense', {
 	splitWith: text('split_with'),
 	// Money handed over to settle up, not something bought: left out of the totals.
 	transfer: integer('transfer', { mode: 'boolean' }).notNull().default(false),
+	// Bookings (a flight, a stay) carry their cost as an expense linked to the entry.
+	itemId: text('item_id').references(() => timelineItem.id, { onDelete: 'cascade' }),
+	flightId: text('flight_id').references(() => flight.id, { onDelete: 'cascade' }),
+	// Paid already, or still to pay (by dueDate, if known). Only paid money is settled up.
+	paymentStatus: text('payment_status', { enum: PAYMENT_STATUSES }).notNull().default('paid'),
+	dueDate: text('due_date'),
 	createdAt: createdAt()
 });
 

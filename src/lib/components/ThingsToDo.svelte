@@ -30,9 +30,11 @@
 					: 'Everything suggested is already on your timeline.'}
 			</p>
 		{:else}
-			<ul class="grid gap-2 sm:grid-cols-2">
+			<ul class="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
 				{#each showAll ? open : open.slice(0, 6) as s (s.title)}
-					<li class="flex gap-3 rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+					<li
+						class="flex min-w-0 gap-3 rounded-lg border border-slate-200 p-2 dark:border-slate-700"
+					>
 						{#if s.thumbnail}
 							<img
 								src={s.thumbnail}
@@ -53,7 +55,7 @@
 								href={s.url}
 								target="_blank"
 								rel="noopener noreferrer"
-								class="font-medium hover:underline">{s.title}</a
+								class="font-medium break-words hover:underline">{s.title}</a
 							>
 							<p class="truncate text-sm text-slate-500 dark:text-slate-400">
 								{[s.description, `${s.distanceKm} km away`].filter(Boolean).join(' · ')}
@@ -65,7 +67,7 @@
 								<input type="hidden" name="url" value={s.url} />
 								{#if s.description}<input type="hidden" name="notes" value={s.description} />{/if}
 								<button
-									class="text-sm font-medium text-blue-900 hover:underline dark:text-blue-300"
+									class="min-h-8 text-sm font-medium text-blue-900 hover:underline dark:text-blue-300"
 								>
 									+ Add as idea
 								</button>
@@ -78,7 +80,7 @@
 				<button
 					type="button"
 					onclick={() => (showAll = !showAll)}
-					class="text-sm text-blue-900 hover:underline dark:text-blue-300"
+					class="min-h-8 text-sm text-blue-900 hover:underline dark:text-blue-300"
 				>
 					{showAll ? 'Show fewer' : `Show ${open.length - 6} more`}
 				</button>

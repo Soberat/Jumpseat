@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeCost, NO_COST, parseCost, summariseCosts } from './cost.ts';
+import { costOf, describeCost, NO_COST, parseCost } from './cost.ts';
 
 const form = (fields: Record<string, string>) => {
 	const data = new FormData();
@@ -55,52 +55,11 @@ describe('describeCost', () => {
 	});
 });
 
-describe('summariseCosts', () => {
-	it('splits paid from to-pay and finds the next payment', () => {
-		const s = summariseCosts(
-			[
-				{
-					label: 'Flight',
-					costMinor: 30000,
-					costCurrency: 'PLN',
-					paymentStatus: 'paid',
-					dueDate: null
-				},
-				{
-					label: 'Hotel',
-					costMinor: 45000,
-					costCurrency: 'PLN',
-					paymentStatus: 'due',
-					dueDate: '2026-11-05'
-				},
-				{
-					label: 'Car',
-					costMinor: 12000,
-					costCurrency: 'EUR',
-					paymentStatus: 'due',
-					dueDate: '2026-10-20'
-				},
-				{
-					label: 'Old',
-					costMinor: 1000,
-					costCurrency: 'EUR',
-					paymentStatus: 'due',
-					dueDate: '2026-09-01'
-				},
-				{ label: 'Free', ...NO_COST }
-			],
-			'2026-10-02'
-		)!;
-		expect(s.paid).toEqual([{ currency: 'PLN', minor: 30000 }]);
-		expect(s.due).toEqual([
-			{ currency: 'PLN', minor: 45000 },
-			{ currency: 'EUR', minor: 13000 }
-		]);
-		expect(s.next?.label).toBe('Car');
-		expect(s.overdue).toBe(1);
-	});
-
-	it('is empty when nothing has a cost', () => {
-		expect(summariseCosts([{ label: 'x', ...NO_COST }], '2026-10-02')).toBeNull();
+describe('costOf', () => {
+	it('reads a linked expense as a cost, or none', () => {
+		expect(
+			costOf({ amountMinor: 500, currency: 'EUR', paymentStatus: 'due', dueDate: '2026-11-01' })
+		).toEqual({ costMinor: 500, costCurrency: 'EUR', paymentStatus: 'due', dueDate: '2026-11-01' });
+		expect(costOf(undefined)).toEqual(NO_COST);
 	});
 });

@@ -9,7 +9,9 @@
 	import type { Flight, TimelineItem } from '#lib/server/db/schema.ts';
 	import CostFields from '#lib/components/CostFields.svelte';
 	import Attachments from '#lib/components/Attachments.svelte';
-	import { describeCost, type CostTone } from '#lib/cost.ts';
+	import { costOf, describeCost, type CostTone } from '#lib/cost.ts';
+	import { page } from '$app/state';
+	import { afterNavigate, goto } from '$app/navigation';
 	import TripWhenFields from '#lib/components/TripWhenFields.svelte';
 	import Weather from '#lib/components/Weather.svelte';
 	import PackingList from '#lib/components/PackingList.svelte';
@@ -25,13 +27,60 @@
 
 	let { data, form }: PageProps = $props();
 
+	// Four tabs keep the page to about a screen each. The tab is in the URL (?tab=money),
+	// so reloading or going back lands on the same one.
+	const TABS = [
+		{ id: 'plan', label: 'Plan', icon: '🗺️' },
+		{ id: 'money', label: 'Money', icon: '💳' },
+		{ id: 'packing', label: 'Packing', icon: '🎒' },
+		{ id: 'share', label: 'Share', icon: '🔗' }
+	] as const;
+	type Tab = (typeof TABS)[number]['id'];
+	const isTab = (t: string | null): t is Tab => TABS.some((x) => x.id === t);
+	const initial = page.url.searchParams.get('tab');
+	let tab = $state<Tab>(isTab(initial) ? initial : 'plan');
+	function show(t: Tab) {
+		tab = t;
+		syncUrl();
+	}
+	function syncUrl() {
+		if ((page.url.searchParams.get('tab') ?? 'plan') === tab) return;
+		const url = new URL(page.url.href);
+		if (tab === 'plan') url.searchParams.delete('tab');
+		else url.searchParams.set('tab', tab);
+		goto(url, { replace: true, reset: false });
+	}
+	// Saving a form lands back on the bare trip URL; put the open tab back in it.
+	afterNavigate(syncUrl);
+	const dueCount = $derived(
+		data.expenses.filter((e) => !e.transfer && e.paymentStatus === 'due').length
+	);
+	const packed = $derived(data.packing.filter((i) => i.packed).length);
+
+	let copied = $state<string | null>(null);
+	async function copy(token: string, url: string) {
+		await navigator.clipboard?.writeText(url);
+		copied = token;
+		setTimeout(() => copied === token && (copied = null), 2000);
+	}
+
+	let editing = $state(false);
+	let adding = $state(false);
+	$effect(() => {
+		if (form?.tripError) editing = true;
+		if (form?.itemError || form?.flightError) adding = true;
+	});
+
 	// Links like "#entry-flight-…" (from the journey view) point into the list: open it first.
 	let listEl = $state<HTMLDetailsElement>();
 	onMount(() => {
 		const open = () => {
-			if (!location.hash.startsWith('#entry-') || !listEl) return;
-			listEl.open = true;
-			document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'center' });
+			if (!location.hash.startsWith('#entry-')) return;
+			tab = 'plan';
+			requestAnimationFrame(() => {
+				if (listEl) listEl.open = true;
+				document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'center' });
+			});
 		};
 		open();
 		addEventListener('hashchange', open);
@@ -71,7 +120,7 @@
 	<form method="POST" {action} use:enhance class="mt-1 text-right">
 		<input type="hidden" {name} value={id} />
 		<button
-			class="text-xs text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+			class="min-h-8 px-1 text-xs text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
 			>Remove {what}</button
 		>
 	</form>
@@ -97,16 +146,18 @@
 {/snippet}
 
 {#snippet cost(target: 'flight' | 'item', x: Flight | TimelineItem)}
-	{@const c = describeCost(x, data.today)}
+	{@const linked = data.expenses.find((e) =>
+		target === 'flight' ? e.flightId === x.id : e.itemId === x.id
+	)}
+	{@const c = describeCost(costOf(linked), data.today)}
 	<div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
 		{#if c}
 			<span class="font-medium tabular-nums">💳 {c.amount}</span>
 			<span class={['rounded px-2 py-0.5 text-xs font-medium', COST_TONES[c.tone]]}>{c.status}</span
 			>
-			{#if c.tone !== 'paid'}
+			{#if c.tone !== 'paid' && linked}
 				<form method="POST" action="?/markPaid" use:enhance>
-					<input type="hidden" name="target" value={target} />
-					<input type="hidden" name="id" value={x.id} />
+					<input type="hidden" name="id" value={linked.id} />
 					<button class="text-xs text-blue-900 hover:underline dark:text-blue-300">Mark paid</button
 					>
 				</form>
@@ -124,7 +175,12 @@
 			>
 				<input type="hidden" name="target" value={target} />
 				<input type="hidden" name="id" value={x.id} />
-				<CostFields cost={x} currency={data.lastCurrency} />
+				<CostFields
+					cost={costOf(linked)}
+					paidBy={linked?.paidBy}
+					members={data.money.members}
+					currency={data.lastCurrency}
+				/>
 				<button
 					class="col-span-3 rounded-lg bg-blue-900 px-3 py-1.5 font-medium text-white hover:bg-blue-800"
 					>Save cost</button
@@ -252,9 +308,16 @@
 	<title>{data.trip.title} · Jumpseat</title>
 </svelte:head>
 
-<a href="/" class="-mb-3 inline-block text-sm text-blue-900 hover:underline dark:text-blue-300"
-	>← All trips</a
->
+<div class="flex items-center justify-between gap-2 text-sm">
+	<a href="/" class="py-1 text-blue-900 hover:underline dark:text-blue-300">← All trips</a>
+	<button
+		type="button"
+		onclick={() => (editing = !editing)}
+		aria-expanded={editing}
+		class="rounded-full px-3 py-1 font-medium text-blue-900 hover:bg-blue-900/5 dark:text-blue-300 dark:hover:bg-white/5"
+		>{editing ? 'Close' : '✏️ Edit trip'}</button
+	>
+</div>
 <TripHero
 	id={data.trip.id}
 	title={data.trip.title}
@@ -264,228 +327,301 @@
 	timezone={data.trip.timezone}
 />
 
-<details class="card" open={!!form?.tripError}>
-	<summary class="cursor-pointer font-semibold">Edit trip</summary>
-	<form
-		method="POST"
-		action="?/update"
-		use:enhance={() =>
-			async ({ update }) =>
-				update({ reset: false })}
-		class="mt-3 grid gap-3 sm:grid-cols-2"
-	>
-		<label class="flex flex-col gap-1 text-sm">
-			Name
-			<input name="title" required value={data.trip.title} />
-		</label>
-		<label class="flex flex-col gap-1 text-sm">
-			Destination
-			<input name="destination" required value={data.trip.destination} />
-		</label>
-		{#key data.trip}
-			<StopsField stops={readStops(data.trip.stops)} />
-		{/key}
-		<OriginField value={data.trip.origin} />
-		{#key data.trip}
-			<TripWhenFields when={data.trip} today={data.today} />
-		{/key}
-		{#if form?.tripError}
-			<p class="text-sm text-red-600 sm:col-span-2 dark:text-red-400">{form.tripError}</p>
-		{/if}
-		<button
-			class="rounded-lg bg-blue-900 px-4 py-2 font-medium text-white hover:bg-blue-800 sm:col-span-2"
+{#if editing}
+	<section class="card animate-rise">
+		<h2 class="text-lg font-semibold">Edit trip</h2>
+		<form
+			method="POST"
+			action="?/update"
+			use:enhance={() =>
+				async ({ update }) =>
+					update({ reset: false })}
+			class="mt-3 grid gap-3 sm:grid-cols-2"
 		>
-			Save
-		</button>
-	</form>
-</details>
+			<label class="flex flex-col gap-1 text-sm">
+				Name
+				<input name="title" required value={data.trip.title} />
+			</label>
+			<label class="flex flex-col gap-1 text-sm">
+				Destination
+				<input name="destination" required value={data.trip.destination} />
+			</label>
+			{#key data.trip}
+				<StopsField stops={readStops(data.trip.stops)} />
+			{/key}
+			<OriginField value={data.trip.origin} />
+			{#key data.trip}
+				<TripWhenFields when={data.trip} today={data.today} />
+			{/key}
+			{#if form?.tripError}
+				<p class="text-sm text-red-600 sm:col-span-2 dark:text-red-400">{form.tripError}</p>
+			{/if}
+			<button
+				class="rounded-lg bg-blue-900 px-4 py-2 font-medium text-white hover:bg-blue-800 sm:col-span-2"
+			>
+				Save
+			</button>
+		</form>
+		<form
+			method="POST"
+			action="?/delete"
+			onsubmit={(e) => {
+				if (!confirm('Delete this trip and everything on it?')) e.preventDefault();
+			}}
+			class="mt-4 border-t border-slate-100 pt-3 dark:border-slate-700"
+		>
+			<button class="py-1 text-sm text-red-600 hover:underline dark:text-red-400"
+				>Delete trip</button
+			>
+		</form>
+	</section>
+{/if}
 
-<a
-	href="/trips/{data.trip.id}/plan"
-	class="flex items-center gap-3 rounded-xl bg-linear-to-r from-blue-900 to-violet-700 p-4 text-white shadow-sm hover:opacity-95"
+<nav
+	class="sticky top-0 z-30 -mx-4 bg-paper/85 px-4 py-2 backdrop-blur dark:bg-ink-950/85"
+	aria-label="Trip sections"
 >
-	<span class="text-2xl" aria-hidden="true">✨</span>
-	<span class="flex-1">
-		<span class="block font-semibold">Plan with AI</span>
-		<span class="block text-sm text-blue-100"
-			>Tell it your style, budget and wishes, and get a day-by-day draft.</span
-		>
-	</span>
-	<span aria-hidden="true">→</span>
-</a>
-
-{#if data.trip.latitude !== null && data.weather}
-	<Weather weather={data.weather} place={data.trip.destination} />
-{:else}
-	<p class="card text-sm text-slate-500 dark:text-slate-400">
-		Weather will show once "{data.trip.destination}" can be found on the map. Check the spelling, or
-		try again when you are online.
-	</p>
-{/if}
-
-<section class="card space-y-4">
-	<div class="flex flex-wrap items-baseline justify-between gap-2">
-		<h2 class="text-lg font-semibold">Timeline</h2>
-		<a
-			href="/trips/{data.trip.id}/calendar.ics"
-			download
-			class="text-sm text-blue-900 hover:underline dark:text-blue-300">📅 Add to calendar</a
-		>
-	</div>
-	<a
-		href="/trips/{data.trip.id}/journey"
-		class="group relative flex items-center gap-4 overflow-hidden rounded-2xl bg-ink-900 p-4 text-white shadow-lg transition hover:shadow-xl"
-	>
-		<span
-			class="pointer-events-none absolute inset-0 bg-[linear-gradient(100deg,transparent_40%,rgb(246_178_60/0.25))]"
-			aria-hidden="true"
-		></span>
-		<span
-			class="relative flex size-12 shrink-0 items-center justify-center rounded-full bg-runway text-2xl text-ink-950 transition group-hover:scale-110"
-			aria-hidden="true">🗺️</span
-		>
-		<span class="relative min-w-0 flex-1">
-			<span class="block font-display text-lg font-bold">Open the journey</span>
-			<span class="block text-sm text-white/70"
-				>Full screen, day by day. Drag ideas and sights onto the days.</span
-			>
-		</span>
-		<span class="relative text-xl transition group-hover:translate-x-1" aria-hidden="true">→</span>
-	</a>
-	{#if data.gantt}
-		<TripTimeline
-			gantt={data.gantt}
-			tripStart={data.schedule.start}
-			undated={data.schedule.undated}
-		/>
-	{/if}
-	<details bind:this={listEl} class="group/list">
-		<summary
-			class="cursor-pointer text-sm font-semibold text-slate-500 select-none dark:text-slate-400"
-		>
-			List view <span class="font-normal">· standby loads, details and removing entries</span>
-		</summary>
-		<div class="pt-4">
-			<TimelineView
-				timeline={data.timeline}
-				tripStart={data.schedule.start}
-				undated={data.schedule.undated}
-			>
-				{#snippet extra(entry)}
-					{#if entry.type === 'flight'}
-						{@render fares(entry.flight)}
-						{@render cost('flight', entry.flight)}
-						{@render attach('flight', entry.flight.id)}
-						{@render standby(entry.flight)}
-						{@render remove('?/deleteFlight', 'flightId', entry.flight.id, 'flight')}
-					{:else if entry.phase !== 'end'}
-						{@render cost('item', entry.item)}
-						{@render attach('item', entry.item.id)}
-						{@render remove('?/deleteItem', 'itemId', entry.item.id, 'entry')}
-					{/if}
-				{/snippet}
-				{#snippet itemExtra(item)}
-					{@render cost('item', item)}
-					{@render attach('item', item.id)}
-					{@render remove('?/deleteItem', 'itemId', item.id, 'entry')}
-				{/snippet}
-			</TimelineView>
-		</div>
-	</details>
-	<AddToTimeline
-		error={form?.itemError ?? form?.flightError}
-		today={data.today}
-		tripStart={data.trip.startDate}
-		lookup={data.flightLookup}
-		currency={data.lastCurrency}
-	/>
-</section>
-
-{#if data.trip.latitude !== null}
-	<ThingsToDo
-		sights={data.sights}
-		place={data.trip.destination}
-		planned={[
-			...data.timeline.days.flatMap((d) =>
-				d.entries.flatMap((e) => (e.type === 'item' ? [e.item.title] : []))
-			),
-			...data.timeline.unscheduled.map((i) => i.title)
-		]}
-	/>
-{/if}
-
-<PackingList items={data.packing} weather={data.weather} error={form?.packingError} />
-
-<Expenses
-	expenses={data.expenses}
-	today={data.today}
-	error={form?.expenseError}
-	lastCurrency={form?.expenseCurrency}
-	bookings={data.bookings}
-	money={data.money}
-	tripId={data.trip.id}
-	attachments={data.attachments}
-	memberError={form?.memberError}
-	attachError={form?.attachError ? { id: form.attachFor, message: form.attachError } : null}
-/>
-
-<section class="card space-y-3">
-	<h2 class="text-lg font-semibold">Sharing</h2>
-	<p class="text-sm text-slate-500 dark:text-slate-400">
-		Anyone with a link sees this trip's plan and weather, without access to the rest of Jumpseat.
-		With an <strong>editable</strong> link they can also plan along in the journey view: add ideas, move
-		things around and set times. Standby loads and booking references stay private.
-	</p>
-	{#each data.shares as s (s.token)}
-		<form method="POST" action="?/revokeShare" use:enhance class="flex items-center gap-2 text-sm">
-			<input type="hidden" name="token" value={s.token} />
-			<span
-				class={[
-					'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
-					s.canEdit
-						? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
-						: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-				]}>{s.canEdit ? 'Can edit' : 'View only'}</span
-			>
-			<input
-				readonly
-				value={s.url}
-				class="min-w-0 flex-1 font-mono text-xs"
-				aria-label="Share link"
-				onfocus={(e) => e.currentTarget.select()}
-			/>
+	<div class="grid grid-cols-4 gap-1 rounded-2xl bg-slate-900/5 p-1 dark:bg-white/5" role="tablist">
+		{#each TABS as t (t.id)}
 			<button
 				type="button"
-				onclick={() => navigator.clipboard?.writeText(s.url)}
-				class="text-blue-900 hover:underline dark:text-blue-300">Copy</button
+				role="tab"
+				aria-selected={tab === t.id}
+				onclick={() => show(t.id)}
+				class={[
+					'relative flex flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-xs font-semibold transition sm:flex-row sm:justify-center sm:gap-2 sm:text-sm',
+					tab === t.id
+						? 'bg-white text-ink-900 shadow-sm dark:bg-ink-800 dark:text-white'
+						: 'text-slate-600 hover:bg-white/50 dark:text-slate-300 dark:hover:bg-white/5'
+				]}
 			>
-			<button class="text-red-600 hover:underline dark:text-red-400">Revoke</button>
-		</form>
-	{/each}
-	<form method="POST" action="?/share" use:enhance class="flex flex-wrap gap-2">
-		<button
-			name="canEdit"
-			value=""
-			class="rounded-lg border border-blue-900 px-3 py-2 text-sm font-medium text-blue-900 dark:border-blue-300 dark:text-blue-300"
-		>
-			Create view-only link
-		</button>
-		<button
-			name="canEdit"
-			value="on"
-			class="rounded-lg border border-amber-600 px-3 py-2 text-sm font-medium text-amber-700 dark:border-amber-400 dark:text-amber-300"
-		>
-			Create editable link
-		</button>
-	</form>
-</section>
+				<span class="text-base leading-none" aria-hidden="true">{t.icon}</span>
+				{t.label}
+				{#if t.id === 'money' && dueCount}
+					<span
+						class="absolute top-1 right-1 rounded-full bg-amber-500 px-1.5 text-[10px] leading-4 text-white sm:static"
+						aria-label="{dueCount} to pay">{dueCount}</span
+					>
+				{:else if t.id === 'packing' && data.packing.length}
+					<span class="font-mono text-[10px] font-normal text-slate-500 dark:text-slate-400"
+						>{packed}/{data.packing.length}</span
+					>
+				{/if}
+			</button>
+		{/each}
+	</div>
+</nav>
 
-<form
-	method="POST"
-	action="?/delete"
-	onsubmit={(e) => {
-		if (!confirm('Delete this trip and all its flights?')) e.preventDefault();
-	}}
->
-	<button class="text-sm text-red-600 hover:underline dark:text-red-400">Delete trip</button>
-</form>
+{#if tab === 'plan'}
+	<div class="grid gap-3 sm:grid-cols-2">
+		<a
+			href="/trips/{data.trip.id}/journey"
+			class="group relative flex items-center gap-4 overflow-hidden rounded-2xl bg-ink-900 p-4 text-white shadow-lg transition hover:shadow-xl"
+		>
+			<span
+				class="pointer-events-none absolute inset-0 bg-[linear-gradient(100deg,transparent_40%,rgb(246_178_60/0.25))]"
+				aria-hidden="true"
+			></span>
+			<span
+				class="relative flex size-12 shrink-0 items-center justify-center rounded-full bg-runway text-2xl text-ink-950 transition group-hover:scale-110"
+				aria-hidden="true">🗺️</span
+			>
+			<span class="relative min-w-0 flex-1">
+				<span class="block font-display text-lg font-bold">Open the journey</span>
+				<span class="block text-sm text-white/70"
+					>Day by day, full screen. Drag ideas onto the days.</span
+				>
+			</span>
+		</a>
+		<a
+			href="/trips/{data.trip.id}/plan"
+			class="group flex items-center gap-4 rounded-2xl bg-linear-to-r from-blue-900 to-violet-700 p-4 text-white shadow-lg transition hover:shadow-xl"
+		>
+			<span
+				class="flex size-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-2xl transition group-hover:scale-110"
+				aria-hidden="true">✨</span
+			>
+			<span class="min-w-0 flex-1">
+				<span class="block font-display text-lg font-bold">Plan with AI</span>
+				<span class="block text-sm text-blue-100"
+					>A day-by-day draft from your style and budget.</span
+				>
+			</span>
+		</a>
+	</div>
+
+	<section class="card space-y-4">
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<h2 class="text-lg font-semibold">Timeline</h2>
+			<a
+				href="/trips/{data.trip.id}/calendar.ics"
+				download
+				class="py-1 text-sm text-blue-900 hover:underline dark:text-blue-300">📅 Add to calendar</a
+			>
+		</div>
+		{#if data.gantt}
+			<TripTimeline
+				gantt={data.gantt}
+				tripStart={data.schedule.start}
+				undated={data.schedule.undated}
+			/>
+		{/if}
+		<details bind:this={listEl} class="group/list">
+			<summary
+				class="cursor-pointer text-sm font-semibold text-slate-500 select-none dark:text-slate-400"
+			>
+				List view <span class="font-normal">· standby loads, details and removing entries</span>
+			</summary>
+			<div class="pt-4">
+				<TimelineView
+					timeline={data.timeline}
+					tripStart={data.schedule.start}
+					undated={data.schedule.undated}
+				>
+					{#snippet extra(entry)}
+						{#if entry.type === 'flight'}
+							{@render fares(entry.flight)}
+							{@render cost('flight', entry.flight)}
+							{@render attach('flight', entry.flight.id)}
+							{@render standby(entry.flight)}
+							{@render remove('?/deleteFlight', 'flightId', entry.flight.id, 'flight')}
+						{:else if entry.phase !== 'end'}
+							{@render cost('item', entry.item)}
+							{@render attach('item', entry.item.id)}
+							{@render remove('?/deleteItem', 'itemId', entry.item.id, 'entry')}
+						{/if}
+					{/snippet}
+					{#snippet itemExtra(item)}
+						{@render cost('item', item)}
+						{@render attach('item', item.id)}
+						{@render remove('?/deleteItem', 'itemId', item.id, 'entry')}
+					{/snippet}
+				</TimelineView>
+			</div>
+		</details>
+		{#if adding}
+			<div class="relative">
+				<AddToTimeline
+					error={form?.itemError ?? form?.flightError}
+					today={data.today}
+					tripStart={data.trip.startDate}
+					lookup={data.flightLookup}
+					currency={data.lastCurrency}
+					members={data.money.members}
+				/>
+				<button
+					type="button"
+					onclick={() => (adding = false)}
+					class="absolute top-2 right-0 rounded-full px-3 py-1 text-sm text-slate-500 hover:bg-slate-900/5 dark:text-slate-400 dark:hover:bg-white/5"
+					>Done</button
+				>
+			</div>
+		{:else}
+			<button
+				type="button"
+				onclick={() => (adding = true)}
+				class="w-full rounded-xl border-2 border-dashed border-slate-300 py-3 font-semibold text-blue-900 transition hover:border-blue-900 hover:bg-blue-900/5 dark:border-slate-600 dark:text-blue-300 dark:hover:border-blue-300"
+			>
+				+ Add a flight, stay or plan
+			</button>
+		{/if}
+	</section>
+
+	{#if data.trip.latitude !== null && data.weather}
+		<Weather weather={data.weather} place={data.trip.destination} />
+	{:else}
+		<p class="card text-sm text-slate-500 dark:text-slate-400">
+			Weather will show once "{data.trip.destination}" can be found on the map. Check the spelling,
+			or try again when you are online.
+		</p>
+	{/if}
+
+	{#if data.trip.latitude !== null}
+		<ThingsToDo
+			sights={data.sights}
+			place={data.trip.destination}
+			planned={[
+				...data.timeline.days.flatMap((d) =>
+					d.entries.flatMap((e) => (e.type === 'item' ? [e.item.title] : []))
+				),
+				...data.timeline.unscheduled.map((i) => i.title)
+			]}
+		/>
+	{/if}
+{:else if tab === 'money'}
+	<Expenses
+		expenses={data.expenses}
+		today={data.today}
+		error={form?.expenseError}
+		lastCurrency={form?.expenseCurrency}
+		money={data.money}
+		tripId={data.trip.id}
+		attachments={data.attachments}
+		memberError={form?.memberError}
+		attachError={form?.attachError ? { id: form.attachFor, message: form.attachError } : null}
+	/>
+{:else if tab === 'packing'}
+	<PackingList items={data.packing} weather={data.weather} error={form?.packingError} />
+{:else}
+	<section class="card space-y-3">
+		<h2 class="text-lg font-semibold">Sharing</h2>
+		<p class="text-sm text-slate-500 dark:text-slate-400">
+			Anyone with a link sees this trip's plan and weather, without access to the rest of Jumpseat.
+			With an <strong>editable</strong> link they can also plan along in the journey view: add ideas,
+			move things around and set times. Standby loads and booking references stay private.
+		</p>
+		{#each data.shares as s (s.token)}
+			<form
+				method="POST"
+				action="?/revokeShare"
+				use:enhance
+				class="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-2 text-sm dark:bg-slate-800/60"
+			>
+				<input type="hidden" name="token" value={s.token} />
+				<span
+					class={[
+						'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
+						s.canEdit
+							? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+							: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+					]}>{s.canEdit ? 'Can edit' : 'View only'}</span
+				>
+				<input
+					readonly
+					value={s.url}
+					class="min-w-0 flex-[1_1_12rem] font-mono text-xs"
+					aria-label="Share link"
+					onfocus={(e) => e.currentTarget.select()}
+				/>
+				<span class="ml-auto flex gap-2">
+					<button
+						type="button"
+						onclick={() => copy(s.token, s.url)}
+						class="min-h-9 rounded-lg bg-blue-900 px-3 font-medium text-white hover:bg-blue-800"
+						aria-live="polite">{copied === s.token ? 'Copied ✓' : 'Copy link'}</button
+					>
+					<button
+						class="min-h-9 rounded-lg px-3 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+						>Revoke</button
+					>
+				</span>
+			</form>
+		{/each}
+		<form method="POST" action="?/share" use:enhance class="flex flex-wrap gap-2">
+			<button
+				name="canEdit"
+				value=""
+				class="rounded-lg border border-blue-900 px-3 py-2 text-sm font-medium text-blue-900 dark:border-blue-300 dark:text-blue-300"
+			>
+				Create view-only link
+			</button>
+			<button
+				name="canEdit"
+				value="on"
+				class="rounded-lg border border-amber-600 px-3 py-2 text-sm font-medium text-amber-700 dark:border-amber-400 dark:text-amber-300"
+			>
+				Create editable link
+			</button>
+		</form>
+	</section>
+{/if}

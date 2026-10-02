@@ -56,7 +56,7 @@
 					<form method="POST" action="?/deletePacking" use:enhance>
 						<input type="hidden" name="id" value={item.id} />
 						<button
-							class="px-1 text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+							class="min-h-8 min-w-8 px-1 text-slate-400 hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
 							aria-label="Remove {item.label}">×</button
 						>
 					</form>

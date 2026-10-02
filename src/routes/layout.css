@@ -50,6 +50,11 @@
 }
 
 @layer base {
+	/* "Add cost", "Add a link or photo" and the like: big enough to hit with a thumb. */
+	summary {
+		padding-block: 0.375rem;
+	}
+
 	/* Native controls (date pickers, scrollbars) follow the device's light/dark setting. */
 	:root {
 		color-scheme: light dark;

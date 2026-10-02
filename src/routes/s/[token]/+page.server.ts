@@ -1,4 +1,3 @@
-import { NO_COST } from '#lib/cost.ts';
 import { error } from '@sveltejs/kit';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '#lib/server/db/index.ts';
@@ -30,8 +29,8 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 			: null;
 
 	// Only what a guest should see: no notes, booking references, costs or standby loads.
-	const items = found.items.map((i) => ({ ...i, ...NO_COST, notes: null, reference: null }));
-	const flights = found.flights.map((f) => ({ ...f, ...NO_COST }));
+	const items = found.items.map((i) => ({ ...i, notes: null, reference: null }));
+	const flights = found.flights;
 	const schedule = scheduleTrip(trip, flights, items);
 	return {
 		trip: {
