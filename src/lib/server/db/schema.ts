@@ -30,6 +30,8 @@ export const trip = sqliteTable('trip', {
 	origin: text('origin'),
 	// Places the trip goes on to after the destination, in order: JSON TripStop[].
 	stops: text('stops'),
+	// What shared costs are added up and settled in.
+	settleCurrency: text('settle_currency').notNull().default('PLN'),
 	notes: text('notes'),
 	createdAt: createdAt()
 });
@@ -142,6 +144,18 @@ export const packingItem = sqliteTable('packing_item', {
 
 export type PackingItem = typeof packingItem.$inferSelect;
 
+/** Someone on the trip, for splitting costs. */
+export const tripMember = sqliteTable('trip_member', {
+	id: id(),
+	tripId: text('trip_id')
+		.notNull()
+		.references(() => trip.id, { onDelete: 'cascade' }),
+	name: text('name').notNull(),
+	createdAt: createdAt()
+});
+
+export type TripMember = typeof tripMember.$inferSelect;
+
 /** Money spent on a trip, in the currency it was paid in. */
 export const expense = sqliteTable('expense', {
 	id: id(),
@@ -154,6 +168,12 @@ export const expense = sqliteTable('expense', {
 	currency: text('currency').notNull(),
 	category: text('category', { enum: EXPENSE_CATEGORIES }).notNull().default('other'),
 	spentOn: text('spent_on'),
+	// Who paid, and who it's split between (JSON member ids, equal shares). Both empty on
+	// trips nobody shares.
+	paidBy: text('paid_by').references(() => tripMember.id, { onDelete: 'set null' }),
+	splitWith: text('split_with'),
+	// Money handed over to settle up, not something bought: left out of the totals.
+	transfer: integer('transfer', { mode: 'boolean' }).notNull().default(false),
 	createdAt: createdAt()
 });
 
@@ -177,3 +197,30 @@ export const tripPlan = sqliteTable('trip_plan', {
 });
 
 export type TripPlanRow = typeof tripPlan.$inferSelect;
+
+/** Daily reference rates (ECB, via Frankfurter), cached so conversions work offline. */
+export const exchangeRate = sqliteTable('exchange_rate', {
+	// The day the rates are for, YYYY-MM-DD.
+	date: text('date').primaryKey(),
+	// JSON: units of each currency per 1 EUR.
+	rates: text('rates').notNull(),
+	fetchedAt: integer('fetched_at', { mode: 'timestamp' }).notNull()
+});
+
+/** A link or photo attached to one thing on a trip: an entry, a flight or an expense. */
+export const attachment = sqliteTable('attachment', {
+	id: id(),
+	tripId: text('trip_id')
+		.notNull()
+		.references(() => trip.id, { onDelete: 'cascade' }),
+	itemId: text('item_id').references(() => timelineItem.id, { onDelete: 'cascade' }),
+	flightId: text('flight_id').references(() => flight.id, { onDelete: 'cascade' }),
+	expenseId: text('expense_id').references(() => expense.id, { onDelete: 'cascade' }),
+	kind: text('kind', { enum: ['link', 'photo'] }).notNull(),
+	label: text('label'),
+	// Links: the address. Photos: the file name in the uploads folder.
+	url: text('url').notNull(),
+	createdAt: createdAt()
+});
+
+export type Attachment = typeof attachment.$inferSelect;

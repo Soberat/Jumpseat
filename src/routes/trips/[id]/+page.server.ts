@@ -4,6 +4,7 @@ import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { PUBLIC_ORIGIN } from '$app/env/private';
 import { db } from '#lib/server/db/index.ts';
 import {
+	attachment,
 	expense,
 	flight,
 	packingItem,
@@ -29,6 +30,13 @@ import { scheduleTrip } from '#lib/schedule.ts';
 import { parseDuration } from '#lib/duration.ts';
 import { flightLookupEnabled } from '#lib/server/flight-lookup.ts';
 import { NO_COST, parseCost, summariseCosts } from '#lib/cost.ts';
+import {
+	attachmentActions,
+	loadMoney,
+	moneyActions,
+	readSplit
+} from '#lib/server/sharing-costs.ts';
+import { pruneUploads, removeTripUploads } from '#lib/server/uploads.ts';
 import {
 	buildTimeline,
 	TIMELINE_KINDS,
@@ -59,7 +67,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		}
 	}
 
-	const [loads, shares, weather, packing, expenses] = await Promise.all([
+	const [loads, shares, weather, packing, expenses, attachments] = await Promise.all([
 		getLoadsForFlights(found.flights.map((f) => f.id)),
 		db
 			.select()
@@ -78,7 +86,16 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			.select()
 			.from(expense)
 			.where(eq(expense.tripId, params.id))
-			.orderBy(desc(expense.spentOn), desc(expense.createdAt))
+			.orderBy(desc(expense.spentOn), desc(expense.createdAt)),
+		db
+			.select()
+			.from(attachment)
+			.where(eq(attachment.tripId, params.id))
+			.orderBy(asc(attachment.createdAt))
+	]);
+	const money = await loadMoney(params.id, found.trip.settleCurrency, expenses, [
+		...found.flights,
+		...found.items.filter((i) => i.status === 'booked')
 	]);
 
 	const origin = PUBLIC_ORIGIN ?? url.origin;
@@ -99,6 +116,8 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		route: tripRoute(found.trip, found.flights),
 		packing,
 		expenses,
+		money,
+		attachments,
 		today: new Date().toISOString().slice(0, 10),
 		shares: shares.map((s) => ({
 			token: s.token,
@@ -238,11 +257,13 @@ export const actions: Actions = {
 		await db
 			.delete(timelineItem)
 			.where(and(eq(timelineItem.id, id), eq(timelineItem.tripId, params.id)));
+		await pruneUploads(params.id);
 	},
 
 	deleteFlight: async ({ params, request }) => {
 		const id = field(await request.formData(), 'flightId');
 		await db.delete(flight).where(and(eq(flight.id, id), eq(flight.tripId, params.id)));
+		await pruneUploads(params.id);
 	},
 
 	setCost: async ({ params, request }) => {
@@ -339,6 +360,8 @@ export const actions: Actions = {
 		}
 		const amountMinor = parseAmount(field(data, 'amount'), currency);
 		if (amountMinor === null) return fail(400, { expenseError: 'Enter an amount, like 12.50.' });
+		const split = await readSplit(params.id, data);
+		if ('error' in split) return fail(400, { expenseError: split.error });
 
 		await db.insert(expense).values({
 			tripId: params.id,
@@ -346,7 +369,8 @@ export const actions: Actions = {
 			amountMinor,
 			currency,
 			category: EXPENSE_CATEGORIES.includes(category) ? category : 'other',
-			spentOn: optionalField(data, 'spentOn')
+			spentOn: optionalField(data, 'spentOn'),
+			...split
 		});
 		return { expenseCurrency: currency };
 	},
@@ -354,7 +378,15 @@ export const actions: Actions = {
 	deleteExpense: async ({ params, request }) => {
 		const id = field(await request.formData(), 'id');
 		await db.delete(expense).where(and(eq(expense.id, id), eq(expense.tripId, params.id)));
+		await pruneUploads(params.id);
 	},
+
+	addMember: ({ params, request }) => moneyActions.addMember(params.id, request),
+	removeMember: ({ params, request }) => moneyActions.removeMember(params.id, request),
+	setSettleCurrency: ({ params, request }) => moneyActions.setSettleCurrency(params.id, request),
+	settleTransfer: ({ params, request }) => moneyActions.settleTransfer(params.id, request),
+	addAttachment: ({ params, request }) => attachmentActions.addAttachment(params.id, request),
+	deleteAttachment: ({ params, request }) => attachmentActions.deleteAttachment(params.id, request),
 
 	share: async ({ params, request }) => {
 		const canEdit = (await request.formData()).get('canEdit') === 'on';
@@ -373,6 +405,7 @@ export const actions: Actions = {
 
 	delete: async ({ params }) => {
 		await db.delete(trip).where(eq(trip.id, params.id));
+		await removeTripUploads(params.id);
 		redirect(303, '/');
 	}
 };

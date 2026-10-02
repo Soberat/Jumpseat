@@ -12,7 +12,8 @@ FROM node:24-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
-    DATABASE_URL=/data/jumpseat.db
+    DATABASE_URL=/data/jumpseat.db \
+    BODY_SIZE_LIMIT=15M
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/build ./build

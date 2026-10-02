@@ -55,6 +55,18 @@ hundred lookups a month) and the flight form gets a **Look up flight** button th
 route, times and length from the flight number and date. Fares aren't available from any free
 API, so flights link to Google Flights and Skyscanner searches instead.
 
+### Splitting costs, currencies and photos
+
+Add the people on a trip under **Expenses** and each expense can say who paid and who it's
+split between; **Settle up** shows who pays whom, in the trip's settle currency (PLN unless you
+change it). Amounts are converted with the ECB's daily reference rates from
+[Frankfurter](https://frankfurter.dev) (free, no key), at the rate for the day you spent the
+money; rates are cached in the database, so it keeps working offline.
+
+Entries, flights and expenses can carry links and photos (receipts, booking confirmations).
+Photos are shrunk to 2000px in the browser and stored in an `uploads` folder next to the
+database, so they're part of the `jumpseat-data` volume and its backups.
+
 ### Sharing trips with people outside your tailnet
 
 Share links only work for others once you switch on

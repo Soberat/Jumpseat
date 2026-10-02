@@ -8,6 +8,7 @@
 	import TimelineView from '#lib/components/TimelineView.svelte';
 	import type { Flight, TimelineItem } from '#lib/server/db/schema.ts';
 	import CostFields from '#lib/components/CostFields.svelte';
+	import Attachments from '#lib/components/Attachments.svelte';
 	import { describeCost, type CostTone } from '#lib/cost.ts';
 	import TripWhenFields from '#lib/components/TripWhenFields.svelte';
 	import Weather from '#lib/components/Weather.svelte';
@@ -142,6 +143,16 @@
 			{/if}
 		</details>
 	</div>
+{/snippet}
+
+{#snippet attach(target: 'item' | 'flight', id: string)}
+	<Attachments
+		tripId={data.trip.id}
+		{target}
+		{id}
+		attachments={data.attachments.filter((a) => (target === 'item' ? a.itemId : a.flightId) === id)}
+		error={form?.attachFor === id ? form.attachError : null}
+	/>
 {/snippet}
 
 {#snippet standby(f: Flight)}
@@ -364,15 +375,18 @@
 					{#if entry.type === 'flight'}
 						{@render fares(entry.flight)}
 						{@render cost('flight', entry.flight)}
+						{@render attach('flight', entry.flight.id)}
 						{@render standby(entry.flight)}
 						{@render remove('?/deleteFlight', 'flightId', entry.flight.id, 'flight')}
 					{:else if entry.phase !== 'end'}
 						{@render cost('item', entry.item)}
+						{@render attach('item', entry.item.id)}
 						{@render remove('?/deleteItem', 'itemId', entry.item.id, 'entry')}
 					{/if}
 				{/snippet}
 				{#snippet itemExtra(item)}
 					{@render cost('item', item)}
+					{@render attach('item', item.id)}
 					{@render remove('?/deleteItem', 'itemId', item.id, 'entry')}
 				{/snippet}
 			</TimelineView>
@@ -408,6 +422,11 @@
 	error={form?.expenseError}
 	lastCurrency={form?.expenseCurrency}
 	bookings={data.bookings}
+	money={data.money}
+	tripId={data.trip.id}
+	attachments={data.attachments}
+	memberError={form?.memberError}
+	attachError={form?.attachError ? { id: form.attachFor, message: form.attachError } : null}
 />
 
 <section class="card space-y-3">
