@@ -12,7 +12,8 @@ const cache = new Map<string, { expires: number; sights: Sight[] }>();
  * reaching about 40 km, for islands and regions whose sights are spread out.
  */
 const STEP_KM = 17;
-const ENOUGH = 12;
+// A city centre easily turns up this many; an island's middle doesn't, and needs the outer ring.
+const ENOUGH = 24;
 
 /** Search points in rings around the destination: ring 0 is the centre. */
 export function searchRings(lat: number, lon: number): { lat: number; lon: number }[][] {
