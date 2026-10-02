@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { rename, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { parseSights, type Sight } from '#lib/sights.ts';
 
 const TIMEOUT_MS = 5000;
@@ -8,7 +11,41 @@ const RETRY_MS = 10 * 60 * 1000;
 export const timing = { pause: 250, retryAfter: 2000 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pending = new Map<string, Promise<Sight[]>>();
-const cache = new Map<string, { expires: number; sights: Sight[] }>();
+type Entry = { expires: number; sights: Sight[] };
+// Wikimedia asks API clients to say who they are and how to reach them.
+const USER_AGENT = 'Jumpseat/1.0 (https://github.com/Soberat/jumpseat; self-hosted travel planner)';
+
+/**
+ * Found sights are kept in a file next to the database, so a restart or redeploy doesn't
+ * send a fresh burst of searches (Wikipedia rate-limits by IP). Tests run without one.
+ */
+const cacheFile = process.env.DATABASE_URL
+	? join(dirname(process.env.DATABASE_URL), 'sights-cache.json')
+	: null;
+let cache: Map<string, Entry> | null = null;
+function entries(): Map<string, Entry> {
+	if (cache) return cache;
+	cache = new Map();
+	try {
+		if (cacheFile) cache = new Map(Object.entries(JSON.parse(readFileSync(cacheFile, 'utf8'))));
+	} catch {
+		// No file yet, or unreadable: start empty.
+	}
+	return cache;
+}
+async function remember(key: string, entry: Entry) {
+	entries().set(key, entry);
+	if (!cacheFile) return;
+	try {
+		const tmp = `${cacheFile}.tmp`;
+		await writeFile(tmp, JSON.stringify(Object.fromEntries(entries())));
+		await rename(tmp, cacheFile);
+	} catch (err) {
+		console.warn('Could not save the sights cache:', (err as Error).message);
+	}
+}
+
+class RateLimited extends Error {}
 /**
  * Geosearch reaches at most 10 km, so searches are laid out on a hex grid 17 km apart
  * (circles of 10 km then leave no gaps): the centre and a ring around it, then an outer ring
@@ -66,14 +103,17 @@ async function geosearch(lat: number, lon: number, fetcher: typeof fetch): Promi
 		const res = await fetcher(url, {
 			signal: AbortSignal.timeout(TIMEOUT_MS),
 			// Wikimedia asks API clients to identify themselves.
-			headers: { 'user-agent': 'Jumpseat/1.0 (self-hosted travel planner)' }
+			headers: { 'user-agent': USER_AGENT }
 		});
+		if (res.status === 429) throw new RateLimited('Wikipedia answered 429');
 		if (!res.ok) throw new Error(`Wikipedia answered ${res.status}`);
 		const text = await res.text();
 		let body: { continue?: Record<string, string> };
 		try {
 			body = JSON.parse(text);
 		} catch {
+			// The "too many requests" refusal sometimes comes back as plain text with a 200.
+			if (/too many requests/i.test(text)) throw new RateLimited('Wikipedia: too many requests');
 			throw new Error(`Wikipedia answered: ${text.slice(0, 80)}`);
 		}
 		bodies.push(body);
@@ -94,7 +134,7 @@ export function getNearbySights(
 	fetcher = fetch
 ): Promise<Sight[]> {
 	const key = `${latitude.toFixed(3)},${longitude.toFixed(3)},${place}`;
-	const hit = cache.get(key);
+	const hit = entries().get(key);
 	if (hit && hit.expires > Date.now()) return Promise.resolve(hit.sights);
 	// The trip page and the journey can ask at the same time; search once for both.
 	let running = pending.get(key);
@@ -116,28 +156,34 @@ async function search(
 	// The outer ring only when the centre and first ring find too little (a city has plenty).
 	const bodies: unknown[] = [];
 	let failed = 0;
-	for (const ring of searchRings(latitude, longitude)) {
+	let refused = false;
+	search: for (const ring of searchRings(latitude, longitude)) {
 		if (ring.length > 6 && parseSights(bodies, ENOUGH, place).length >= ENOUGH) break;
 		for (const p of ring) {
-			// Wikipedia turns away quick bursts: a short pause between searches, and one
-			// more try after a longer one.
+			// A short pause between searches, and one more try after a longer one.
 			for (const [attempt, delay] of [timing.pause, timing.retryAfter].entries()) {
 				await sleep(delay);
 				try {
 					bodies.push(...(await geosearch(p.lat, p.lon, fetcher)));
 					break;
 				} catch (err) {
-					if (attempt === 1) {
-						failed++;
-						console.warn(`Sights search near ${place} failed:`, (err as Error).message);
+					if (attempt === 0 && !(err instanceof RateLimited)) continue;
+					failed++;
+					console.warn(`Sights search near ${place} failed:`, (err as Error).message);
+					// Asking again straight away only extends the block: keep what we have.
+					if (err instanceof RateLimited) {
+						refused = true;
+						break search;
 					}
+					break;
 				}
 			}
 		}
 	}
-	if (bodies.length === 0) return [];
+	const stale = entries().get(key);
+	if (bodies.length === 0) return stale?.sights ?? [];
 	const sights = parseSights(bodies, 16, place, { lat: latitude, lon: longitude });
-	// A partial answer is only kept briefly, so the next visit tries the missing searches again.
-	cache.set(key, { expires: Date.now() + (failed ? RETRY_MS : TTL_MS), sights });
+	// A partial answer is only kept briefly, so a later visit tries the missing searches again.
+	await remember(key, { expires: Date.now() + (failed || refused ? RETRY_MS : TTL_MS), sights });
 	return sights;
 }
