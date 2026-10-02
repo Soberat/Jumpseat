@@ -19,6 +19,7 @@ import { parseWhen, whenWindow } from '#lib/when.ts';
 import { field, getLoadsForFlights, getTripPlan, optionalField } from '#lib/server/trips.ts';
 import { parseOrigin, tripRoute } from '#lib/trip-route.ts';
 import { buildGantt } from '#lib/gantt.ts';
+import { scheduleTrip } from '#lib/schedule.ts';
 import {
 	buildTimeline,
 	TIMELINE_KINDS,
@@ -72,6 +73,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	]);
 
 	const origin = PUBLIC_ORIGIN ?? url.origin;
+	const schedule = scheduleTrip(found.trip, found.flights, found.items);
 	const { latitude, longitude } = found.trip;
 	return {
 		// Streamed: the page renders first and the suggestions fill in.
@@ -80,8 +82,9 @@ export const load: PageServerLoad = async ({ params, url }) => {
 				? getNearbySights(latitude, longitude)
 				: Promise.resolve([]),
 		trip: found.trip,
-		timeline: buildTimeline(found.flights, found.items),
-		gantt: buildGantt(found.flights, found.items, found.trip),
+		timeline: buildTimeline(found.flights, schedule.items),
+		gantt: buildGantt(found.flights, schedule.items, { ...found.trip, startDate: schedule.start }),
+		schedule: { start: schedule.start, undated: schedule.undated },
 		loads,
 		weather,
 		route: tripRoute(found.trip, found.flights),

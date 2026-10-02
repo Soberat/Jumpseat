@@ -117,10 +117,11 @@ export function planToTimeline(plan: TripPlan, tripStart: string | null, currenc
 						: null;
 				return {
 					kind: KIND_MAP[item.kind],
-					title: tripStart ? item.title : `Day ${day.day}: ${item.title}`,
+					title: item.title,
 					status: 'idea' as const,
 					startDate: tripStart ? addDays(tripStart, day.day - 1) : null,
-					startTime: tripStart && item.time && TIME_RE.test(item.time) ? item.time : null,
+					startTime: item.time && TIME_RE.test(item.time) ? item.time : null,
+					day: day.day,
 					location: item.kind === 'transport' ? null : item.location,
 					notes: [item.details, cost].filter(Boolean).join(' ') || null
 				};

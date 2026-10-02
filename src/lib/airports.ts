@@ -65,8 +65,31 @@ const LIST: [string, string, number, number][] = [
 	['PTY', 'Panama City', 9.07, -79.38], ['SJO', 'San José', 9.99, -84.2], ['HAV', 'Havana', 22.99, -82.41],
 	['PUJ', 'Punta Cana', 18.57, -68.36], ['BOG', 'Bogotá', 4.7, -74.15], ['LIM', 'Lima', -12.02, -77.11],
 	['GRU', 'São Paulo', -23.43, -46.47], ['GIG', 'Rio de Janeiro', -22.81, -43.25], ['EZE', 'Buenos Aires', -34.82, -58.54],
-	['SCL', 'Santiago', -33.39, -70.79]
+	['SCL', 'Santiago', -33.39, -70.79], ['ACE', 'Lanzarote', 28.95, -13.61], ['FUE', 'Fuerteventura', 28.45, -13.86],
+	['SPC', 'La Palma', 28.63, -17.76], ['FNC', 'Madeira', 32.69, -16.77], ['PDL', 'Azores', 37.74, -25.7],
+	['CFU', 'Corfu', 39.6, 19.91], ['ZTH', 'Zakynthos', 37.75, 20.88], ['CAG', 'Cagliari', 39.25, 9.06],
+	['OLB', 'Olbia', 40.9, 9.52]
 ];
+
+/** Islands and regions people name instead of the airport's city. */
+const ALIASES: Record<string, string> = {
+	arrecife: 'ACE',
+	funchal: 'FNC',
+	'ponta delgada': 'PDL',
+	crete: 'HER',
+	mallorca: 'PMI',
+	majorca: 'PMI',
+	palma: 'PMI',
+	sardinia: 'CAG',
+	sicily: 'CTA',
+	cyprus: 'LCA',
+	algarve: 'FAO',
+	'gran canaria': 'LPA',
+	'las palmas': 'LPA',
+	'canary islands': 'LPA',
+	tenerife: 'TFS',
+	'costa del sol': 'AGP'
+};
 
 export const AIRPORTS: Airport[] = LIST.map(([code, city, lat, lon]) => ({ code, city, lat, lon }));
 const BY_CODE = new Map(AIRPORTS.map((a) => [a.code, a]));
@@ -82,7 +105,8 @@ export function airportForPlace(place: string): Airport | null {
 	const byCode = /^[a-z]{3}$/i.test(place.trim()) ? airportByCode(place) : null;
 	if (byCode) return byCode;
 	const name = fold(place.split(',')[0]);
-	return AIRPORTS.find((a) => fold(a.city) === name) ?? null;
+	const alias = ALIASES[name];
+	return alias ? airportByCode(alias) : (AIRPORTS.find((a) => fold(a.city) === name) ?? null);
 }
 
 /** Three letters for a place, real code when we know one: "Lisbon" → LIS, "Sintra" → SIN… */

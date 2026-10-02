@@ -16,11 +16,14 @@
 		timeline,
 		extra,
 		itemExtra,
-		tripStart = null
+		tripStart = null,
+		undated = false
 	}: {
 		timeline: Timeline;
 		/** When set, days are labelled "Day 1", "Day 2"… */
 		tripStart?: string | null;
+		/** The trip has no dates yet: days are "Day 1", "Day 2"… with no calendar dates. */
+		undated?: boolean;
 		/** Rendered under each entry, e.g. standby loads and remove buttons. */
 		extra?: Snippet<[TimelineEntry]>;
 		/** Rendered under each unscheduled item. */
@@ -52,7 +55,11 @@
 			parts.push(item.location);
 		}
 		if (phase === 'start' && item.endDate && item.endDate !== item.startDate) {
-			parts.push(`until ${dayLabel(item.endDate)}`);
+			parts.push(
+				undated && tripStart
+					? `until day ${daysBetween(tripStart, item.endDate) + 1}`
+					: `until ${dayLabel(item.endDate)}`
+			);
 		}
 		if (item.reference) parts.push(`Ref ${item.reference}`);
 		return parts;
@@ -150,7 +157,9 @@
 					<span class="font-mono text-xs tracking-wider text-runway uppercase">Day {dayNumber}</span
 					>
 				{/if}
-				<span class="text-slate-500 dark:text-slate-400">{dayLabel(day.date)}</span>
+				{#if !undated}
+					<span class="text-slate-500 dark:text-slate-400">{dayLabel(day.date)}</span>
+				{/if}
 			</h3>
 			<ul class="space-y-2">
 				{#each day.entries as entry, i (entry.key)}

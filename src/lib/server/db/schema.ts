@@ -100,6 +100,9 @@ export const timelineItem = sqliteTable('timeline_item', {
 	reference: text('reference'),
 	url: text('url'),
 	notes: text('notes'),
+	// "Day 3 of the trip", for AI-plan ideas on trips whose dates aren't fixed yet.
+	// A real startDate wins; otherwise it's placed relative to the trip's start.
+	day: integer('day'),
 	createdAt: createdAt()
 });
 

@@ -75,13 +75,12 @@ describe('planToTimeline', () => {
 		expect(rows[1]).toMatchObject({ kind: 'other', startDate: '2026-11-06', startTime: null });
 	});
 
-	it('labels days when the trip has no dates', () => {
+	it('keeps the day and time when the trip has no dates', () => {
 		const rows = planToTimeline(plan, null, 'EUR');
-		expect(rows.map((r) => r.title)).toEqual([
-			'Day 1: Taberna da Rua das Flores',
-			'Day 2: Jerónimos Monastery'
+		expect(rows.map((r) => [r.title, r.day, r.startDate, r.startTime])).toEqual([
+			['Taberna da Rua das Flores', 1, null, '19:30'],
+			['Jerónimos Monastery', 2, null, null]
 		]);
-		expect(rows.every((r) => r.startDate === null && r.startTime === null)).toBe(true);
 	});
 });
 

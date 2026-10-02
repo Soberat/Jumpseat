@@ -3,7 +3,11 @@
 	import { daysBetween } from '#lib/climate.ts';
 	import type { Gantt, GanttBar } from '#lib/gantt.ts';
 
-	let { gantt, tripStart = null }: { gantt: Gantt; tripStart?: string | null } = $props();
+	let {
+		gantt,
+		tripStart = null,
+		undated = false
+	}: { gantt: Gantt; tripStart?: string | null; undated?: boolean } = $props();
 
 	const n = $derived(gantt.days.length);
 	const pct = (x: number) => `${(x / n) * 100}%`;
@@ -17,6 +21,7 @@
 			const x = daysBetween(gantt.days[0], today) + (d.getHours() * 60 + d.getMinutes()) / 1440;
 			now = x >= 0 && x <= n ? x : null;
 		};
+		if (undated) return;
 		tick();
 		const t = setInterval(tick, 60_000);
 		return () => clearInterval(t);
@@ -77,11 +82,18 @@
 			{#each gantt.days as d (d)}
 				{@const num = tripStart ? daysBetween(tripStart, d) + 1 : null}
 				<div class="flex-1 pl-2">
-					<div class="font-mono text-[10px] font-bold tracking-wider text-runway uppercase">
-						{num !== null && num > 0 ? `Day ${num}` : ' '}
-					</div>
-					<div class="text-sm leading-tight font-semibold">{weekday(d)}</div>
-					<div class="text-xs text-slate-500 dark:text-slate-400">{dayOfMonth(d)}</div>
+					{#if undated}
+						<div class="font-mono text-[10px] font-bold tracking-wider text-runway uppercase">
+							Day
+						</div>
+						<div class="text-lg leading-tight font-bold">{num}</div>
+					{:else}
+						<div class="font-mono text-[10px] font-bold tracking-wider text-runway uppercase">
+							{num !== null && num > 0 ? `Day ${num}` : ' '}
+						</div>
+						<div class="text-sm leading-tight font-semibold">{weekday(d)}</div>
+						<div class="text-xs text-slate-500 dark:text-slate-400">{dayOfMonth(d)}</div>
+					{/if}
 				</div>
 			{/each}
 		</div>

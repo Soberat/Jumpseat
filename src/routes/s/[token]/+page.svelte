@@ -30,5 +30,9 @@
 
 <section class="card space-y-4">
 	<h2 class="text-lg font-semibold">Timeline</h2>
-	<TimelineView timeline={data.timeline} tripStart={data.trip.startDate} />
+	<TimelineView
+		timeline={data.timeline}
+		tripStart={data.schedule.start}
+		undated={data.schedule.undated}
+	/>
 </section>

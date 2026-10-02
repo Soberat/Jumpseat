@@ -218,10 +218,18 @@
 		>
 	</div>
 	{#if data.gantt}
-		<TripTimeline gantt={data.gantt} tripStart={data.trip.startDate} />
+		<TripTimeline
+			gantt={data.gantt}
+			tripStart={data.schedule.start}
+			undated={data.schedule.undated}
+		/>
 		<h3 class="pt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Day by day</h3>
 	{/if}
-	<TimelineView timeline={data.timeline} tripStart={data.trip.startDate}>
+	<TimelineView
+		timeline={data.timeline}
+		tripStart={data.schedule.start}
+		undated={data.schedule.undated}
+	>
 		{#snippet extra(entry)}
 			{#if entry.type === 'flight'}
 				{@render standby(entry.flight)}

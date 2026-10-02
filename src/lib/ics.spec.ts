@@ -39,6 +39,7 @@ const item = (extra: Partial<TimelineItem>): TimelineItem => ({
 	reference: null,
 	url: null,
 	notes: null,
+	day: null,
 	createdAt: new Date(0),
 	...extra
 });

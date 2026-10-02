@@ -7,6 +7,7 @@ import { whenWindow } from '#lib/when.ts';
 import { getTripPlan } from '#lib/server/trips.ts';
 import { tripRoute } from '#lib/trip-route.ts';
 import { buildTimeline } from '#lib/timeline.ts';
+import { scheduleTrip } from '#lib/schedule.ts';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, setHeaders }) => {
@@ -29,6 +30,7 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 
 	// Only what a guest should see: no notes, booking references or standby loads.
 	const items = found.items.map((i) => ({ ...i, notes: null, reference: null }));
+	const schedule = scheduleTrip(trip, found.flights, items);
 	return {
 		trip: {
 			title: trip.title,
@@ -39,7 +41,8 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 			timezone: trip.timezone,
 			hasLocation: trip.latitude !== null
 		},
-		timeline: buildTimeline(found.flights, items),
+		timeline: buildTimeline(found.flights, schedule.items),
+		schedule: { start: schedule.start, undated: schedule.undated },
 		route: tripRoute(trip, found.flights),
 		today: new Date().toISOString().slice(0, 10),
 		weather

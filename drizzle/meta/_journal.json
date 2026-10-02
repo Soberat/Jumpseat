@@ -43,6 +43,13 @@
       "when": 1790956936794,
       "tag": "0005_trip_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790957875800,
+      "tag": "0006_item_day",
+      "breakpoints": true
     }
   ]
 }
