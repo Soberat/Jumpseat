@@ -10,6 +10,8 @@ import {
 	landDots,
 	project,
 	seamFor,
+	placeLabels,
+	bow,
 	splitAtSeam,
 	wrapLon
 } from './route.ts';
@@ -192,5 +194,36 @@ describe('seamFor', () => {
 		// SFO → SYD is one piece; KRK → SFO crosses the cut.
 		expect(splitAtSeam(greatCircle(sfo, syd), seam)).toHaveLength(1);
 		expect(splitAtSeam(greatCircle(krk, sfo), seam)).toHaveLength(2);
+	});
+});
+
+describe('placeLabels', () => {
+	it('moves a label that would overlap its neighbour, and drops connections with no room', () => {
+		const [fra, krk, via] = placeLabels(
+			[
+				{ x: 100, y: 50, text: 'FRA', size: 12, r: 4 },
+				{ x: 118, y: 50, text: 'KRK', size: 12, r: 4 },
+				{ x: 109, y: 50, text: 'MUC', size: 12, r: 3, optional: true }
+			],
+			400,
+			200
+		);
+		expect(fra).toMatchObject({ x: 100, anchor: 'middle' });
+		expect(krk).not.toBeNull();
+		expect([krk!.anchor, krk!.y < 50]).not.toEqual(['middle', false]);
+		expect(via).toBeNull();
+	});
+});
+
+describe('bow', () => {
+	it('bends outbound and return legs to opposite sides', () => {
+		const line: [number, number][] = [
+			[0, 0],
+			[50, 0],
+			[100, 0]
+		];
+		const back = line.toReversed();
+		expect(bow(line)[1][1]).toBeLessThan(0);
+		expect(bow(back)[1][1]).toBeGreaterThan(0);
 	});
 });

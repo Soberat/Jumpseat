@@ -12,7 +12,9 @@ import {
 	type PlanRequest,
 	type TripPlan
 } from '#lib/plan.ts';
-import { describeWhen } from '#lib/when.ts';
+import { describeWhen, whenWindow } from '#lib/when.ts';
+import { describeWeatherForPlanner } from '#lib/climate.ts';
+import { getTripWeather } from './open-meteo.ts';
 import { airportByCode } from '#lib/airports.ts';
 import { DEFAULT_HOME, describeStops, readStops, type TripStop } from '#lib/trip-route.ts';
 
@@ -68,7 +70,9 @@ export function buildPrompt(
 	flights: Flight[],
 	items: TimelineItem[],
 	/** For long trips drafted in parts: which days this call covers, and what's already planned. */
-	part?: { from: number; to: number; earlier: TripPlan[] }
+	part?: { from: number; to: number; earlier: TripPlan[] },
+	/** The forecast or typical weather, from describeWeatherForPlanner. */
+	weather: string | null = null
 ): string {
 	const budget =
 		request.budgetAmount !== null
@@ -84,7 +88,7 @@ Travellers: ${request.travellers}
 Styles: ${request.styles.length ? request.styles.join(', ') : 'no preference'}
 Budget: ${budget}
 Wishes: ${request.wishes || 'none given'}
-
+${weather ? `\n${weather}\n` : ''}
 Already on the trip:
 ${describeExisting(flights, items)}${part ? describePart(request.days, part) : ''}`;
 }
@@ -132,11 +136,17 @@ export async function generatePlan(
 ): Promise<void> {
 	try {
 		const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+		const weather =
+			trip.latitude !== null && trip.longitude !== null
+				? describeWeatherForPlanner(
+						await getTripWeather(trip.latitude, trip.longitude, whenWindow(trip)).catch(() => null)
+					)
+				: null;
 		const parts = planParts(request.days);
 		const drafted: TripPlan[] = [];
 		for (const [from, to] of parts) {
 			const part = parts.length > 1 ? { from, to, earlier: drafted } : undefined;
-			drafted.push(await draft(client, buildPrompt(trip, request, flights, items, part)));
+			drafted.push(await draft(client, buildPrompt(trip, request, flights, items, part, weather)));
 		}
 		const plan = mergePlans(drafted);
 

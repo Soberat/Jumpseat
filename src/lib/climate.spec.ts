@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { planWeather, typicalDays, typicalMonths, yearsBefore, type DailyRecord } from './climate';
+import {
+	describeWeatherForPlanner,
+	planWeather,
+	typicalDays,
+	typicalMonths,
+	weatherByDate,
+	weatherHeadline,
+	yearsBefore,
+	type DailyRecord
+} from './climate';
 
 const today = '2026-10-02';
 
@@ -94,5 +103,44 @@ describe('typicalMonths', () => {
 		expect(typicalMonths(['2027-04'], records)).toEqual([
 			{ month: '2027-04', maxC: 20, minC: 10, rainyDays: 2, daysInMonth: 30 }
 		]);
+	});
+});
+
+describe('weather summaries', () => {
+	const day = (date: string, maxC: number, rainChance: number, icon = '☀️') => ({
+		date,
+		maxC,
+		minC: maxC - 6,
+		rainChance,
+		icon,
+		summary: 'Clear',
+		typical: false
+	});
+	const days = {
+		kind: 'days' as const,
+		title: 'Forecast',
+		note: null,
+		days: [day('2026-11-28', 23, 10), day('2026-11-29', 21, 70, '🌧️'), day('2026-11-30', 24, 5)]
+	};
+
+	it('sums up the trip in one line', () => {
+		expect(weatherHeadline(days)).toBe('☀️ 21–24°, rain likely on 1 day');
+		expect(
+			weatherHeadline({
+				kind: 'months',
+				title: 'Typical weather',
+				note: '',
+				months: [{ month: '2026-11', maxC: 24, minC: 17, rainyDays: 3, daysInMonth: 30 }]
+			})
+		).toBe('🌤️ 24° by day, 17° at night');
+		expect(weatherHeadline({ kind: 'unavailable', title: 'x' })).toBeNull();
+	});
+
+	it('gives the planner each day and finds days by date', () => {
+		const text = describeWeatherForPlanner(days)!;
+		expect(text).toContain('- 2026-11-29: Clear, 21°C / 15°C, 70% chance of rain');
+		expect(text).toContain('indoor plans on wet ones');
+		expect(weatherByDate(days).get('2026-11-30')?.maxC).toBe(24);
+		expect(weatherByDate(null).size).toBe(0);
 	});
 });

@@ -78,6 +78,7 @@ export interface View {
 /**
  * Frames the given points in a width × height box: an equirectangular map,
  * squashed by cos(latitude) so mid-latitude places don't look stretched.
+ * With `world`, the view is the whole globe cut at that longitude, for routes that go all the way round.
  */
 export function frame(
 	points: Point[],
@@ -85,26 +86,31 @@ export function frame(
 	height: number,
 	minSpan = 24,
 	/** Space kept clear of the route at the top and bottom (for overlaid text). */
-	inset = { top: 0, bottom: 0 }
+	inset = { top: 0, bottom: 0 },
+	world: number | null = null
 ): View {
-	const inner = height - inset.top - inset.bottom;
+	const inner = Math.max(height - inset.top - inset.bottom, height * 0.25);
 	const lats = points.map((p) => p.lat);
 	const lons = points.map((p) => p.lon);
 	const midLat = (Math.max(...lats) + Math.min(...lats)) / 2;
 	const ky = 1 / Math.max(Math.cos(rad(midLat)), 0.35);
-	let spanLon = Math.max(Math.max(...lons) - Math.min(...lons), minSpan) * 1.35;
-	let spanLat = Math.max(Math.max(...lats) - Math.min(...lats), minSpan / 3) * 1.5;
-	// Fit the box's aspect ratio.
-	if (spanLon / (spanLat * ky) < width / inner) spanLon = (spanLat * ky * width) / inner;
-	else spanLat = (spanLon * inner) / (width * ky);
-	const cLon = (Math.max(...lons) + Math.min(...lons)) / 2;
-	const cLat = midLat;
-	const scale = spanLon / width;
+	let spanLon =
+		world !== null ? 360 : Math.max(Math.max(...lons) - Math.min(...lons), minSpan) * 1.25;
+	const spanLat = Math.max(Math.max(...lats) - Math.min(...lats), minSpan / 3) * 1.4;
+	// Fit the box's aspect ratio, never showing more than the whole world across.
+	if (world === null && spanLon / (spanLat * ky) < width / inner) {
+		spanLon = Math.min((spanLat * ky * width) / inner, 360);
+	}
+	const cLon = world !== null ? world + 180 : (Math.max(...lons) + Math.min(...lons)) / 2;
+	// A whole-world map always spans the width exactly, so lines leave one edge and come back at the other.
+	const scale = world !== null ? 360 / width : Math.max(spanLon / width, (spanLat * ky) / inner);
+	// Centre the route in the space between the insets.
+	const cLat = midLat + ((inset.top - inset.bottom) / 2) * (scale / ky);
 	return {
 		width,
 		height,
-		west: cLon - spanLon / 2,
-		north: cLat + spanLat / 2 + (inset.top * scale) / ky,
+		west: cLon - (width * scale) / 2,
+		north: cLat + (height / 2) * (scale / ky),
 		scale,
 		ky
 	};
@@ -168,4 +174,97 @@ export function splitAtSeam(points: Point[], seam: number): Point[][] {
 		prev = q;
 	}
 	return pieces;
+}
+
+type XY = [x: number, y: number];
+
+/**
+ * Bows a line drawn in screen space to the left of its direction of travel, like a flight
+ * path on a chart. Outbound and return legs bow opposite ways, so they don't draw on top of each other.
+ */
+export function bow(points: XY[], amount = 0.18, max = 60): XY[] {
+	const [x0, y0] = points[0];
+	const [x1, y1] = points.at(-1)!;
+	const len = Math.hypot(x1 - x0, y1 - y0);
+	if (len < 1) return points;
+	const lift = Math.min(len * amount, max);
+	const [nx, ny] = [(y1 - y0) / len, -(x1 - x0) / len];
+	const n = points.length - 1;
+	return points.map(([x, y], i) => {
+		const k = Math.sin((Math.PI * i) / n) * lift;
+		return [x + nx * k, y + ny * k];
+	});
+}
+
+export interface Label {
+	x: number;
+	y: number;
+	text: string;
+	size: number;
+	/** Radius of the place's dot. */
+	r: number;
+	/** Labels that may be left out when there's no room (connections). */
+	optional?: boolean;
+}
+
+export interface PlacedLabel {
+	x: number;
+	y: number;
+	anchor: 'start' | 'middle' | 'end';
+	text: string;
+	size: number;
+}
+
+/**
+ * Puts each label below, above, right or left of its place, whichever first clears the
+ * dots and labels already placed. Labels go in the order given, so put the important ones first.
+ */
+export function placeLabels(
+	labels: Label[],
+	width: number,
+	height: number
+): (PlacedLabel | null)[] {
+	type Box = [x0: number, y0: number, x1: number, y1: number];
+	const taken: Box[] = labels.map((l) => [
+		l.x - l.r - 2,
+		l.y - l.r - 2,
+		l.x + l.r + 2,
+		l.y + l.r + 2
+	]);
+	const hits = (a: Box) =>
+		taken.some((b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]);
+	return labels.map((l, i) => {
+		const w = l.text.length * l.size * 0.62;
+		const h = l.size;
+		const gap = l.r + 3;
+		const options: [PlacedLabel, Box][] = [
+			[
+				{ x: l.x, y: l.y + gap + h * 0.85, anchor: 'middle', text: l.text, size: l.size },
+				[l.x - w / 2, l.y + gap, l.x + w / 2, l.y + gap + h]
+			],
+			[
+				{ x: l.x, y: l.y - gap - h * 0.15, anchor: 'middle', text: l.text, size: l.size },
+				[l.x - w / 2, l.y - gap - h, l.x + w / 2, l.y - gap]
+			],
+			[
+				{ x: l.x + gap, y: l.y + h * 0.35, anchor: 'start', text: l.text, size: l.size },
+				[l.x + gap, l.y - h / 2, l.x + gap + w, l.y + h / 2]
+			],
+			[
+				{ x: l.x - gap, y: l.y + h * 0.35, anchor: 'end', text: l.text, size: l.size },
+				[l.x - gap - w, l.y - h / 2, l.x - gap, l.y + h / 2]
+			]
+		];
+		const own = taken[i];
+		taken[i] = [0, 0, 0, 0];
+		const inside = ([x0, y0, x1, y1]: Box) => x0 >= 0 && y0 >= 0 && x1 <= width && y1 <= height;
+		const fit =
+			options.find(([, b]) => inside(b) && !hits(b)) ??
+			(l.optional ? undefined : (options.find(([, b]) => inside(b)) ?? options[0]));
+		taken[i] = own;
+		if (!fit) return null;
+		const [x0, y0, x1, y1] = fit[1];
+		taken.push([x0 - 4, y0 - 2, x1 + 4, y1 + 2]);
+		return fit[0];
+	});
 }

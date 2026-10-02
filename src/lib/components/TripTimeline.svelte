@@ -1,16 +1,25 @@
 <script lang="ts">
 	import { LOCALE } from '#lib/format.ts';
 	import { onMount } from 'svelte';
-	import { daysBetween } from '#lib/climate.ts';
+	import { daysBetween, isWet, type DayWeather } from '#lib/climate.ts';
 	import type { Gantt, GanttBar } from '#lib/gantt.ts';
 
 	let {
 		gantt,
 		tripStart = null,
-		undated = false
-	}: { gantt: Gantt; tripStart?: string | null; undated?: boolean } = $props();
+		undated = false,
+		weather = new Map()
+	}: {
+		gantt: Gantt;
+		tripStart?: string | null;
+		undated?: boolean;
+		/** Each day's weather, shown under the date so plans can follow the sun. */
+		weather?: Map<string, DayWeather>;
+	} = $props();
 
 	const n = $derived(gantt.days.length);
+	// Room for a weather line under the dates.
+	const tall = $derived(!undated && gantt.days.some((d) => weather.has(d)));
 	const pct = (x: number) => `${(x / n) * 100}%`;
 
 	// "Now" marker, placed in the browser so it uses the device's clock.
@@ -63,7 +72,7 @@
 <div class="-mx-4 [scrollbar-width:thin] overflow-x-auto px-4 pb-2">
 	<div class="relative" style="min-width: {n * 150}px">
 		<!-- Day columns with night shading, so you can see days and nights pass. -->
-		<div class="absolute inset-0 top-12 flex" aria-hidden="true">
+		<div class={['absolute inset-0 flex', tall ? 'top-16' : 'top-12']} aria-hidden="true">
 			{#each gantt.days as d, i (d)}
 				<div
 					class={[
@@ -81,7 +90,7 @@
 		</div>
 
 		<!-- Day headers -->
-		<div class="relative flex h-12">
+		<div class={['relative flex', tall ? 'h-16' : 'h-12']}>
 			{#each gantt.days as d (d)}
 				{@const num = tripStart ? daysBetween(tripStart, d) + 1 : null}
 				<div class="flex-1 pl-2">
@@ -96,6 +105,21 @@
 						</div>
 						<div class="text-sm leading-tight font-semibold">{weekday(d)}</div>
 						<div class="text-xs text-slate-500 dark:text-slate-400">{dayOfMonth(d)}</div>
+						{@const w = weather.get(d)}
+						{#if w}
+							<div
+								class={[
+									'mt-0.5 text-xs whitespace-nowrap tabular-nums',
+									isWet(w)
+										? 'font-semibold text-sky-700 dark:text-sky-300'
+										: 'text-slate-600 dark:text-slate-300'
+								]}
+								title="{w.summary}{w.typical ? ' (typical)' : ''}"
+							>
+								{w.icon}
+								{w.maxC}°
+							</div>
+						{/if}
 					{/if}
 				</div>
 			{/each}

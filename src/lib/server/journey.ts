@@ -4,6 +4,8 @@ import { db } from '#lib/server/db/index.ts';
 import { shareLink, timelineItem } from '#lib/server/db/schema.ts';
 import { field, getTripPlan, optionalField } from '#lib/server/trips.ts';
 import { getNearbySights } from '#lib/server/wikipedia.ts';
+import { getTripWeather } from '#lib/server/open-meteo.ts';
+import { whenWindow } from '#lib/when.ts';
 import { scheduleTrip } from '#lib/schedule.ts';
 import { parseDuration } from '#lib/duration.ts';
 
@@ -41,8 +43,13 @@ export async function journeyData(tripId: string, guest: 'view' | 'edit' | null 
 		numbered,
 		sights:
 			latitude !== null && longitude !== null
-				? getNearbySights(latitude, longitude).catch(() => [])
-				: Promise.resolve([])
+				? getNearbySights(latitude, longitude, found.trip.destination).catch(() => [])
+				: Promise.resolve([]),
+		// Shown on each day, so outdoor plans can go on the good ones.
+		weather:
+			latitude !== null && longitude !== null && !numbered
+				? getTripWeather(latitude, longitude, whenWindow(found.trip)).catch(() => null)
+				: Promise.resolve(null)
 	};
 }
 

@@ -243,3 +243,62 @@ export function forecastToDays(days: DailyForecast[]): DayWeather[] {
 		typical: false
 	}));
 }
+
+/** Each day's weather by date, for day headers. */
+export function weatherByDate(w: TripWeather | null | undefined): Map<string, DayWeather> {
+	return new Map(w?.kind === 'days' ? w.days.map((d) => [d.date, d]) : []);
+}
+
+/** A rainy day worth flagging when planning: rain more likely than not. */
+export const isWet = (d: DayWeather) => (d.rainChance ?? 0) >= 50;
+
+const monthName = (month: string) =>
+	new Date(`${month}-15T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long' });
+
+/** One line for the top of the trip: "🌤️ 21–24°, rain likely on 2 days", "🌤️ November: highs around 24°". */
+export function weatherHeadline(w: TripWeather | null | undefined): string | null {
+	if (!w || w.kind === 'unavailable') return null;
+	if (w.kind === 'months') {
+		const m = w.months[0];
+		if (!m) return null;
+		const icon = typicalIcon((100 * m.rainyDays) / m.daysInMonth, m.minC).icon;
+		return `${icon} ${m.maxC}° by day, ${m.minC}° at night`;
+	}
+	if (w.days.length === 0) return null;
+	const highs = w.days.map((d) => d.maxC);
+	const [lo, hi] = [Math.min(...highs), Math.max(...highs)];
+	const wet = w.days.filter(isWet).length;
+	// The most common icon stands for the trip.
+	const counts = new Map<string, number>();
+	for (const d of w.days) counts.set(d.icon, (counts.get(d.icon) ?? 0) + 1);
+	const icon = [...counts].sort((a, b) => b[1] - a[1])[0][0];
+	const temps = lo === hi ? `${hi}°` : `${lo}–${hi}°`;
+	return `${icon} ${temps}${wet ? `, rain likely on ${wet} day${wet === 1 ? '' : 's'}` : ', mostly dry'}`;
+}
+
+/** The weather as lines for the AI planner, so it can put outdoor plans on the good days. */
+export function describeWeatherForPlanner(w: TripWeather | null | undefined): string | null {
+	if (!w || w.kind === 'unavailable') return null;
+	if (w.kind === 'months') {
+		if (w.months.length === 0) return null;
+		return [
+			'Typical weather (averages from past years; exact dates not set):',
+			...w.months.map(
+				(m) =>
+					`- ${monthName(m.month)}: highs around ${m.maxC}°C, lows around ${m.minC}°C, rain on about ${m.rainyDays} of ${m.daysInMonth} days`
+			)
+		].join('\n');
+	}
+	if (w.days.length === 0) return null;
+	const forecast = w.days.some((d) => !d.typical);
+	return [
+		forecast
+			? 'Weather forecast for the travel dates (days marked "typical" are averages from past years):'
+			: 'Typical weather for the travel dates (averages from past years, not a forecast):',
+		...w.days.map(
+			(d) =>
+				`- ${d.date}: ${d.summary}, ${d.maxC}°C / ${d.minC}°C${d.rainChance !== null ? `, ${d.rainChance}% chance of rain` : ''}${forecast && d.typical ? ' (typical)' : ''}`
+		),
+		'Put beaches, hikes and viewpoints on the drier, warmer days and indoor plans on wet ones.'
+	].join('\n');
+}

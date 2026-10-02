@@ -19,6 +19,7 @@
 	import ThingsToDo from '#lib/components/ThingsToDo.svelte';
 	import TripHero from '#lib/components/TripHero.svelte';
 	import TripTimeline from '#lib/components/TripTimeline.svelte';
+	import { weatherByDate, weatherHeadline } from '#lib/climate.ts';
 	import OriginField from '#lib/components/OriginField.svelte';
 	import StopsField from '#lib/components/StopsField.svelte';
 	import { readStops } from '#lib/trip-route.ts';
@@ -71,15 +72,19 @@
 		if (form?.itemError || form?.flightError) adding = true;
 	});
 
-	// Links like "#entry-flight-…" (from the journey view) point into the list: open it first.
+	// Links like "#entry-flight-…" (from the journey view) point into the list, and the hero's
+	// weather chip to #weather: both live on the Plan tab, so open it first.
 	let listEl = $state<HTMLDetailsElement>();
 	onMount(() => {
 		const open = () => {
-			if (!location.hash.startsWith('#entry-')) return;
-			tab = 'plan';
+			const entry = location.hash.startsWith('#entry-');
+			if (!entry && location.hash !== '#weather') return;
+			show('plan');
 			requestAnimationFrame(() => {
-				if (listEl) listEl.open = true;
-				document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'center' });
+				if (entry && listEl) listEl.open = true;
+				document
+					.getElementById(location.hash.slice(1))
+					?.scrollIntoView({ block: entry ? 'center' : 'start', behavior: 'smooth' });
 			});
 		};
 		open();
@@ -325,6 +330,7 @@
 	today={data.today}
 	route={data.route}
 	timezone={data.trip.timezone}
+	weather={weatherHeadline(data.weather)}
 />
 
 {#if editing}
@@ -413,6 +419,15 @@
 </nav>
 
 {#if tab === 'plan'}
+	{#if data.trip.latitude !== null && data.weather}
+		<Weather weather={data.weather} place={data.trip.destination} />
+	{:else}
+		<p class="card text-sm text-slate-500 dark:text-slate-400">
+			Weather will show once "{data.trip.destination}" can be found on the map. Check the spelling,
+			or try again when you are online.
+		</p>
+	{/if}
+
 	<div class="grid gap-3 sm:grid-cols-2">
 		<a
 			href="/trips/{data.trip.id}/journey"
@@ -464,6 +479,7 @@
 				gantt={data.gantt}
 				tripStart={data.schedule.start}
 				undated={data.schedule.undated}
+				weather={weatherByDate(data.weather)}
 			/>
 		{/if}
 		<details bind:this={listEl} class="group/list">
@@ -526,15 +542,6 @@
 			</button>
 		{/if}
 	</section>
-
-	{#if data.trip.latitude !== null && data.weather}
-		<Weather weather={data.weather} place={data.trip.destination} />
-	{:else}
-		<p class="card text-sm text-slate-500 dark:text-slate-400">
-			Weather will show once "{data.trip.destination}" can be found on the map. Check the spelling,
-			or try again when you are online.
-		</p>
-	{/if}
 
 	{#if data.trip.latitude !== null}
 		<ThingsToDo

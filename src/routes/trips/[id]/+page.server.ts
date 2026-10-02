@@ -103,7 +103,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		// Streamed: the page renders first and the suggestions fill in.
 		sights:
 			latitude !== null && longitude !== null
-				? getNearbySights(latitude, longitude)
+				? getNearbySights(latitude, longitude, found.trip.destination)
 				: Promise.resolve([]),
 		trip: found.trip,
 		timeline: buildTimeline(found.flights, schedule.items),

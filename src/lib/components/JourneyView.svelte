@@ -5,6 +5,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import type { Flight, TimelineItem } from '#lib/server/db/schema.ts';
 	import type { Sight } from '#lib/sights.ts';
+	import { isWet, weatherByDate, type DayWeather, type TripWeather } from '#lib/climate.ts';
 	import { itemIcon } from '#lib/timeline.ts';
 	import {
 		cardsByDay,
@@ -35,6 +36,7 @@
 		start: string | null;
 		numbered: boolean;
 		sights: Promise<Sight[]>;
+		weather?: Promise<TripWeather | null>;
 	};
 	let {
 		data,
@@ -342,6 +344,10 @@
 	// ---- Details sheet and the tray ------------------------------------------
 	let selected = $state<JourneyCard | null>(null);
 	let tab = $state<'ideas' | 'sights'>('ideas');
+	let weather = $state(new Map<string, DayWeather>());
+	$effect(() => {
+		data.weather?.then((w) => (weather = weatherByDate(w)));
+	});
 	let newIdea = $state('');
 
 	async function addIdea(e: SubmitEvent) {
@@ -425,7 +431,23 @@
 				]}>{d.day}</span
 			>
 			<div class="min-w-0 flex-1 leading-tight">
-				<div class="font-semibold">{d.date ? weekday(d.date) : `Day ${d.day}`}</div>
+				<div class="flex items-center gap-2 font-semibold">
+					{d.date ? weekday(d.date) : `Day ${d.day}`}
+					{#if d.date && weather.get(d.date)}
+						{@const w = weather.get(d.date)!}
+						<span
+							class={[
+								'rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap tabular-nums',
+								isWet(w)
+									? 'bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200'
+									: 'bg-amber-100/80 text-amber-900 dark:bg-amber-400/15 dark:text-amber-200'
+							]}
+							title="{w.summary}{w.rainChance !== null
+								? `, ${w.rainChance}% chance of rain`
+								: ''}{w.typical ? ' (typical for this date)' : ''}">{w.icon} {w.maxC}°</span
+						>
+					{/if}
+				</div>
 				<div class="truncate text-xs text-slate-500 dark:text-slate-400">
 					{d.date ? dateLabel(d.date) : 'Dates not set yet'}{stats
 						? ` · ${clockOf(stats.first)}–${clockOf(stats.last)}, ${formatDuration(stats.free)} free`

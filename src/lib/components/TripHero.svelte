@@ -13,7 +13,8 @@
 		when,
 		today,
 		route,
-		timezone
+		timezone,
+		weather = null
 	}: {
 		id: string;
 		title: string;
@@ -21,9 +22,16 @@
 		today: string;
 		route: TripRoute | null;
 		timezone: string | null;
+		/** One line, like "🌤️ 21–24°, mostly dry". */
+		weather?: string | null;
 	} = $props();
 
 	const board = $derived(countdown(when, today));
+	// The map is drawn at the hero's real size, kept clear of the text over it.
+	let mapW = $state(0);
+	let mapH = $state(0);
+	let topH = $state(40);
+	let bottomH = $state(90);
 
 	// The sky behind the map follows the time of day at the destination.
 	let localTime = $state<string | null>(null);
@@ -64,7 +72,7 @@
 
 <section
 	class={[
-		'relative isolate h-72 overflow-hidden rounded-3xl bg-linear-to-b text-white shadow-lg transition-colors duration-1000 sm:h-80',
+		'relative isolate h-80 overflow-hidden rounded-3xl bg-linear-to-b text-white shadow-lg transition-colors duration-1000',
 		SKIES[sky]
 	]}
 >
@@ -79,36 +87,56 @@
 		</div>
 	{/if}
 
-	{#if route}
-		<div class="absolute inset-0 animate-[rise_1s_ease-out_both]">
-			<RouteMap {route} inset={{ top: 90, bottom: 150 }} />
-		</div>
-	{/if}
+	<div
+		class="absolute inset-0 animate-[rise_1s_ease-out_both]"
+		bind:clientWidth={mapW}
+		bind:clientHeight={mapH}
+	>
+		{#if route && mapW > 0}
+			<RouteMap
+				{route}
+				width={mapW}
+				height={mapH}
+				inset={{ top: topH + 16, bottom: bottomH + 20 }}
+			/>
+		{/if}
+	</div>
 	<div class="absolute inset-0 bg-linear-to-t from-black/70 via-black/10 to-transparent"></div>
 
-	<div class="absolute top-3 left-3 flex flex-wrap gap-1.5 text-xs font-medium">
-		{#if localTime}
-			<span class="rounded-full bg-black/30 px-2.5 py-1 backdrop-blur"
-				>🕒 {localTime} in {route?.destination.label ?? 'destination'}</span
+	<div
+		class="absolute inset-x-3 top-3 flex items-start justify-between gap-2"
+		bind:clientHeight={topH}
+	>
+		<div class="flex min-w-0 flex-wrap gap-1.5 text-xs font-medium">
+			{#if localTime}
+				<span class="rounded-full bg-black/30 px-2.5 py-1 backdrop-blur"
+					>🕒 {localTime} in {route?.destination.label ?? 'destination'}</span
+				>
+			{/if}
+			{#if weather}
+				<a
+					href="#weather"
+					class="rounded-full bg-white/90 px-2.5 py-1 font-semibold text-ink-950 shadow-sm hover:bg-white"
+					>{weather}</a
+				>
+			{/if}
+			{#if route && route.distanceKm > 0}
+				<span class="rounded-full bg-black/30 px-2.5 py-1 backdrop-blur"
+					>{formatNumber(route.distanceKm)} km {route.stops.length
+						? 'all the way round'
+						: `from ${route.home.code}`}</span
+				>
+			{/if}
+		</div>
+		<div class="flex shrink-0 flex-col items-end gap-1">
+			<SplitFlap text={board.big} size="md" delay={300} />
+			<span class="font-mono text-[10px] font-bold tracking-[0.2em] text-white/80"
+				>{board.caption}</span
 			>
-		{/if}
-		{#if route && route.distanceKm > 0}
-			<span class="rounded-full bg-black/30 px-2.5 py-1 backdrop-blur"
-				>{formatNumber(route.distanceKm)} km {route.stops.length
-					? 'all the way round'
-					: `from ${route.home.code}`}</span
-			>
-		{/if}
+		</div>
 	</div>
 
-	<div class="absolute top-3 right-3 flex flex-col items-end gap-1">
-		<SplitFlap text={board.big} size="md" delay={300} />
-		<span class="font-mono text-[10px] font-bold tracking-[0.2em] text-white/80"
-			>{board.caption}</span
-		>
-	</div>
-
-	<div class="absolute inset-x-4 bottom-4">
+	<div class="absolute inset-x-4 bottom-4" bind:clientHeight={bottomH}>
 		<h1
 			class="text-3xl leading-tight font-bold drop-shadow sm:text-4xl"
 			style="view-transition-name: trip-title-{id}"
