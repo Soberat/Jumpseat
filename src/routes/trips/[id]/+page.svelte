@@ -9,6 +9,8 @@
 	import Expenses from '#lib/components/Expenses.svelte';
 	import ThingsToDo from '#lib/components/ThingsToDo.svelte';
 	import TripHero from '#lib/components/TripHero.svelte';
+	import TripTimeline from '#lib/components/TripTimeline.svelte';
+	import OriginField from '#lib/components/OriginField.svelte';
 	import { bestOptions, ODDS_LABELS, oddsFor, type Odds } from '#lib/standby.ts';
 	import type { PageProps } from './$types';
 
@@ -168,6 +170,7 @@
 			Destination
 			<input name="destination" required value={data.trip.destination} />
 		</label>
+		<OriginField value={data.trip.origin} />
 		{#key data.trip}
 			<TripWhenFields when={data.trip} today={data.today} />
 		{/key}
@@ -214,6 +217,10 @@
 			class="text-sm text-blue-900 hover:underline dark:text-blue-300">📅 Add to calendar</a
 		>
 	</div>
+	{#if data.gantt}
+		<TripTimeline gantt={data.gantt} tripStart={data.trip.startDate} />
+		<h3 class="pt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Day by day</h3>
+	{/if}
 	<TimelineView timeline={data.timeline} tripStart={data.trip.startDate}>
 		{#snippet extra(entry)}
 			{#if entry.type === 'flight'}

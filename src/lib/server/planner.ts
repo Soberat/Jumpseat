@@ -6,6 +6,8 @@ import { db } from './db/index.ts';
 import { tripPlan, type Flight, type TimelineItem, type Trip } from './db/schema.ts';
 import { parsePlan, TripPlanSchema, type PlanRequest } from '#lib/plan.ts';
 import { describeWhen } from '#lib/when.ts';
+import { airportByCode } from '#lib/airports.ts';
+import { DEFAULT_HOME } from '#lib/trip-route.ts';
 
 export const MODEL = 'claude-opus-5-5';
 export const plannerEnabled = () => Boolean(ANTHROPIC_API_KEY);
@@ -40,8 +42,13 @@ function describeExisting(flights: Flight[], items: TimelineItem[]): string {
 	return lines.length ? lines.join('\n') : '- Nothing yet.';
 }
 
+function startingPoint(origin: string | null): string {
+	const a = airportByCode(origin ?? DEFAULT_HOME);
+	return a ? `${a.city} (${a.code})` : (origin ?? DEFAULT_HOME);
+}
+
 export function buildPrompt(
-	trip: Pick<Trip, 'destination' | 'startDate' | 'endDate' | 'plannedPeriod'>,
+	trip: Pick<Trip, 'destination' | 'startDate' | 'endDate' | 'plannedPeriod' | 'origin'>,
 	request: PlanRequest,
 	flights: Flight[],
 	items: TimelineItem[]
@@ -53,6 +60,7 @@ export function buildPrompt(
 	return `Plan this trip.
 
 Destination: ${trip.destination}
+Travelling from: ${startingPoint(trip.origin)}
 When: ${describeWhen(trip)}${trip.startDate ? ` (day 1 is ${trip.startDate})` : ''}
 Length: ${request.days} day${request.days === 1 ? '' : 's'}; return exactly this many days.
 Travellers: ${request.travellers}

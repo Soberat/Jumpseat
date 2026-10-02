@@ -36,6 +36,13 @@
       "when": 1790954913102,
       "tag": "0004_trip_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790956936794,
+      "tag": "0005_trip_origin",
+      "breakpoints": true
     }
   ]
 }

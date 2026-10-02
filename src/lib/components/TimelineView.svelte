@@ -34,13 +34,19 @@
 			month: 'long'
 		});
 
+	const minutesOf = (t: string) => {
+		const [h, m] = t.split(':').map(Number);
+		return h * 60 + (m || 0);
+	};
+
 	function details(item: TimelineItem, phase: 'start' | 'end' | 'single'): string[] {
 		const parts: string[] = [];
 		if (item.kind === 'transport') {
 			// Untitled legs already got "Taxi · A → B" as their title; don't repeat it.
 			const autoTitled = item.title === transportTitle(item.mode, item.fromPlace, item.toPlace);
 			if (!autoTitled && item.mode) parts.push(MODE_LABELS[item.mode]);
-			if (!autoTitled && (item.fromPlace || item.toPlace))
+			// With both ends known the route is drawn instead (see `visual`).
+			if (!autoTitled && (item.fromPlace || item.toPlace) && !(item.fromPlace && item.toPlace))
 				parts.push([item.fromPlace, item.toPlace].filter(Boolean).join(' → '));
 		} else if (item.location) {
 			parts.push(item.location);
@@ -90,6 +96,36 @@
 	</div>
 {/snippet}
 
+{#snippet visual(item: TimelineItem, phase: 'start' | 'end' | 'single')}
+	{@const nights = item.endDate && item.startDate ? daysBetween(item.startDate, item.endDate) : 0}
+	{#if item.kind === 'stay' && phase === 'start' && nights > 0}
+		<div class="mt-1.5 flex items-center gap-1" aria-label="{nights} nights">
+			{#each { length: Math.min(nights, 14) }, i (i)}
+				<span
+					class="size-3 rounded-full bg-indigo-400 shadow-[inset_-3px_-1px_0_0_theme(--color-indigo-200)] dark:bg-indigo-300 dark:shadow-[inset_-3px_-1px_0_0_theme(--color-ink-900)]"
+				></span>
+			{/each}
+			<span class="ml-1 font-mono text-[11px] text-slate-500 dark:text-slate-400"
+				>{nights} night{nights === 1 ? '' : 's'}</span
+			>
+		</div>
+	{:else if item.kind === 'transport' && item.fromPlace && item.toPlace}
+		<div class="mt-1.5 flex items-center gap-2 text-xs font-medium">
+			<span class="max-w-[40%] truncate">{item.fromPlace}</span>
+			<span class="relative h-4 min-w-12 flex-1" aria-hidden="true">
+				<span
+					class="absolute inset-x-0 top-1/2 border-t-2 border-dotted border-teal-400 dark:border-teal-600"
+				></span>
+				<span
+					class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white px-1 text-sm dark:bg-ink-900"
+					>{itemIcon(item)}</span
+				>
+			</span>
+			<span class="max-w-[40%] truncate">{item.toPlace}</span>
+		</div>
+	{/if}
+{/snippet}
+
 {#if timeline.days.length === 0 && timeline.unscheduled.length === 0}
 	<p class="text-sm text-slate-500 dark:text-slate-400">Nothing planned yet.</p>
 {/if}
@@ -119,6 +155,7 @@
 			<ul class="space-y-2">
 				{#each day.entries as entry, i (entry.key)}
 					<li
+						id="entry-{entry.key}"
 						use:reveal={i * 60}
 						class={[
 							'rounded-xl border p-3 transition hover:shadow-sm',
@@ -132,6 +169,19 @@
 								class="w-12 shrink-0 font-mono text-sm text-slate-500 tabular-nums dark:text-slate-400"
 							>
 								{entry.time ?? ''}
+								{#if entry.time}
+									{@const at = minutesOf(entry.time) / 1440}
+									<!-- Where in the day this happens: night, morning, afternoon, night. -->
+									<span
+										class="relative mt-1 block h-1.5 w-11 rounded-full bg-[linear-gradient(to_right,#1e2d63,#f6b23c_30%,#7dd3fc_50%,#f6b23c_75%,#1e2d63)] opacity-80"
+										aria-hidden="true"
+									>
+										<span
+											class="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow ring-1 ring-slate-400"
+											style="left: {at * 100}%"
+										></span>
+									</span>
+								{/if}
 							</div>
 							{#if entry.type === 'flight'}
 								<div class="min-w-0 flex-1">
@@ -163,7 +213,10 @@
 								</div>
 							{:else}
 								<div class="text-xl leading-6" aria-hidden="true">{itemIcon(entry.item)}</div>
-								{@render itemBody(entry.item, entry.phase, entry.phaseLabel)}
+								<div class="min-w-0 flex-1">
+									{@render itemBody(entry.item, entry.phase, entry.phaseLabel)}
+									{@render visual(entry.item, entry.phase)}
+								</div>
 							{/if}
 						</div>
 						{@render extra?.(entry)}

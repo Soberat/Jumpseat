@@ -30,6 +30,7 @@ const LIST: [string, string, number, number][] = [
 	['PMO', 'Palermo', 38.18, 13.1], ['CPH', 'Copenhagen', 55.62, 12.65], ['OSL', 'Oslo', 60.19, 11.1],
 	['ARN', 'Stockholm', 59.65, 17.92], ['HEL', 'Helsinki', 60.32, 24.96], ['KEF', 'Reykjavik', 63.99, -22.62],
 	['WAW', 'Warsaw', 52.17, 20.97], ['KRK', 'Krakow', 50.08, 19.78], ['GDN', 'Gdansk', 54.38, 18.47],
+	['KTW', 'Katowice', 50.47, 19.08], ['POZ', 'Poznan', 52.42, 16.83], ['RZE', 'Rzeszow', 50.11, 22.02],
 	['WRO', 'Wroclaw', 51.1, 16.89], ['PRG', 'Prague', 50.1, 14.26], ['BUD', 'Budapest', 47.44, 19.26],
 	['OTP', 'Bucharest', 44.57, 26.09], ['SOF', 'Sofia', 42.7, 23.41], ['ATH', 'Athens', 37.94, 23.94],
 	['HER', 'Heraklion', 35.34, 25.18], ['JTR', 'Santorini', 36.4, 25.48], ['RHO', 'Rhodes', 36.41, 28.09],

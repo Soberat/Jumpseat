@@ -16,14 +16,9 @@ import { EXPENSE_CATEGORIES, parseAmount, type ExpenseCategory } from '#lib/mone
 import { geocode, getTripWeather } from '#lib/server/open-meteo.ts';
 import { getNearbySights } from '#lib/server/wikipedia.ts';
 import { parseWhen, whenWindow } from '#lib/when.ts';
-import {
-	field,
-	getLoadsForFlights,
-	getTripPlan,
-	homeAirport,
-	optionalField
-} from '#lib/server/trips.ts';
-import { tripRoute } from '#lib/trip-route.ts';
+import { field, getLoadsForFlights, getTripPlan, optionalField } from '#lib/server/trips.ts';
+import { parseOrigin, tripRoute } from '#lib/trip-route.ts';
+import { buildGantt } from '#lib/gantt.ts';
 import {
 	buildTimeline,
 	TIMELINE_KINDS,
@@ -86,9 +81,10 @@ export const load: PageServerLoad = async ({ params, url }) => {
 				: Promise.resolve([]),
 		trip: found.trip,
 		timeline: buildTimeline(found.flights, found.items),
+		gantt: buildGantt(found.flights, found.items, found.trip),
 		loads,
 		weather,
-		route: tripRoute(found.trip, found.flights, await homeAirport()),
+		route: tripRoute(found.trip, found.flights),
 		packing,
 		expenses,
 		today: new Date().toISOString().slice(0, 10),
@@ -106,6 +102,8 @@ export const actions: Actions = {
 		}
 		const when = parseWhen(data);
 		if ('error' in when) return fail(400, { tripError: when.error });
+		const origin = parseOrigin(field(data, 'origin'));
+		if ('error' in origin) return fail(400, { tripError: origin.error });
 
 		const [current] = await db.select().from(trip).where(eq(trip.id, params.id));
 		if (!current) error(404, 'Trip not found');
@@ -122,7 +120,7 @@ export const actions: Actions = {
 		}
 		await db
 			.update(trip)
-			.set({ title, destination, ...when, ...coords })
+			.set({ title, destination, ...origin, ...when, ...coords })
 			.where(eq(trip.id, params.id));
 		return { tripSaved: true };
 	},

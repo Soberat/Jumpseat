@@ -25,6 +25,8 @@ export const trip = sqliteTable('trip', {
 	endDate: text('end_date'),
 	// When the dates aren't fixed yet: a month ("2027-04") or a quarter ("2027-Q2").
 	plannedPeriod: text('planned_period'),
+	// Airport code the trip starts from; null means the default home airport.
+	origin: text('origin'),
 	notes: text('notes'),
 	createdAt: createdAt()
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { airportForPlace, placeCode } from './airports.ts';
 import { countdown } from './countdown.ts';
-import { guessHome, tripRoute } from './trip-route.ts';
+import { parseOrigin, tripRoute } from './trip-route.ts';
 import { distanceKm, dotsInView, frame, greatCircle, landDots, project } from './route.ts';
 
 const FRA = { lat: 50.03, lon: 8.57 };
@@ -74,10 +74,15 @@ describe('countdown', () => {
 });
 
 describe('tripRoute', () => {
-	const lisbon = { destination: 'Lisbon', latitude: 38.72, longitude: -9.13 };
+	const lisbon = { destination: 'Lisbon', latitude: 38.72, longitude: -9.13, origin: null };
+	it('starts from Krakow unless the trip says otherwise', () => {
+		expect(tripRoute(lisbon, [])!.home.code).toBe('KRK');
+		expect(tripRoute({ ...lisbon, origin: 'WAW' }, [])!.home.code).toBe('WAW');
+	});
+
 	it('draws a planned arc from home before any flights', () => {
-		const r = tripRoute(lisbon, [], 'MUC')!;
-		expect(r.home.code).toBe('MUC');
+		const r = tripRoute(lisbon, [])!;
+		expect(r.home.code).toBe('KRK');
 		expect(r.destination.code).toBe('LIS');
 		expect(r.legs).toHaveLength(1);
 		expect(r.legs[0].planned).toBe(true);
@@ -85,26 +90,28 @@ describe('tripRoute', () => {
 
 	it('uses real legs and names the landing airport', () => {
 		const r = tripRoute(
-			{ destination: 'Sintra', latitude: 38.8, longitude: -9.38 },
+			{ destination: 'Sintra', latitude: 38.8, longitude: -9.38, origin: 'FRA' },
 			[
 				{ origin: 'FRA', destination: 'LIS', standby: true, flightNumber: 'LH1166' },
 				{ origin: 'LIS', destination: 'FRA', standby: true, flightNumber: 'LH1167' },
 				{ origin: 'XXX', destination: 'LIS', standby: false, flightNumber: 'ZZ1' }
-			],
-			'FRA'
+			]
 		)!;
 		expect(r.legs).toHaveLength(2);
 		expect(r.destination).toMatchObject({ code: 'LIS', label: 'Sintra' });
 	});
 
-	it('guesses home from where trips start', () => {
-		expect(guessHome(['MUC', 'FRA', 'MUC', 'XYZ'])).toBe('MUC');
-		expect(guessHome([])).toBe('FRA');
+	it('reads a starting point from a code or a city', () => {
+		expect(parseOrigin('')).toEqual({ origin: null });
+		expect(parseOrigin('KRK · Krakow')).toEqual({ origin: null });
+		expect(parseOrigin('waw')).toEqual({ origin: 'WAW' });
+		expect(parseOrigin('Vienna')).toEqual({ origin: 'VIE' });
+		expect(parseOrigin('Atlantis')).toHaveProperty('error');
 	});
 
 	it('gives up without any coordinates', () => {
 		expect(
-			tripRoute({ destination: 'Nowhere', latitude: null, longitude: null }, [], 'FRA')
+			tripRoute({ destination: 'Nowhere', latitude: null, longitude: null, origin: null }, [])
 		).toBeNull();
 	});
 });
