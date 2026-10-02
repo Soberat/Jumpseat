@@ -30,6 +30,8 @@ services:
     environment:
       - DATABASE_URL=/data/jumpseat.db
       - PUBLIC_ORIGIN=${PUBLIC_ORIGIN:-}
+      # Optional: turns on the AI trip planner. Put it in .env, never in this file.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       - jumpseat-data:/data
     restart: unless-stopped

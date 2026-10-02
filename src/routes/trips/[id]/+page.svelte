@@ -178,6 +178,20 @@
 	</form>
 </details>
 
+<a
+	href="/trips/{data.trip.id}/plan"
+	class="flex items-center gap-3 rounded-xl bg-linear-to-r from-blue-900 to-violet-700 p-4 text-white shadow-sm hover:opacity-95"
+>
+	<span class="text-2xl" aria-hidden="true">✨</span>
+	<span class="flex-1">
+		<span class="block font-semibold">Plan with AI</span>
+		<span class="block text-sm text-blue-100"
+			>Tell it your style, budget and wishes, and get a day-by-day draft.</span
+		>
+	</span>
+	<span aria-hidden="true">→</span>
+</a>
+
 {#if data.trip.latitude !== null && data.weather}
 	<Weather weather={data.weather} place={data.trip.destination} />
 {:else}

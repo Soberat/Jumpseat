@@ -1,0 +1,153 @@
+import { z } from 'zod';
+import { addDays, daysBetween } from './climate.ts';
+import { EXPENSE_CATEGORIES } from './money.ts';
+import type { TimelineKind } from './timeline.ts';
+import type { WhenWindow } from './when.ts';
+
+export const TRIP_STYLES = [
+	'city break',
+	'sightseeing',
+	'beach & sun',
+	'food & drink',
+	'culture & museums',
+	'nature & hiking',
+	'sports & active',
+	'nightlife',
+	'relaxing',
+	'shopping'
+] as const;
+
+export const BUDGET_LEVELS = ['shoestring', 'moderate', 'comfortable', 'luxury'] as const;
+export type BudgetLevel = (typeof BUDGET_LEVELS)[number];
+
+export const BUDGET_LABELS: Record<BudgetLevel, string> = {
+	shoestring: '🎒 Shoestring',
+	moderate: '💶 Moderate',
+	comfortable: '🛎️ Comfortable',
+	luxury: '🥂 Luxury'
+};
+
+/** What the person asked for. Stored with the plan so it can be shown and re-run. */
+export const PlanRequestSchema = z.object({
+	styles: z.array(z.string()),
+	budgetLevel: z.enum(BUDGET_LEVELS),
+	budgetAmount: z.number().nullable(),
+	currency: z.string(),
+	travellers: z.number(),
+	days: z.number(),
+	wishes: z.string()
+});
+export type PlanRequest = z.infer<typeof PlanRequestSchema>;
+
+const PLAN_ITEM_KINDS = ['activity', 'restaurant', 'transport', 'stay'] as const;
+
+/** The shape Claude must answer in (enforced with structured outputs). */
+export const TripPlanSchema = z.object({
+	summary: z.string().describe('Two or three sentences on the shape of the trip.'),
+	whereToStay: z.object({
+		area: z.string().describe('Neighbourhood or area to base yourself in.'),
+		why: z.string(),
+		priceRange: z.string().describe('Typical nightly price range for the budget, e.g. "€90–140".')
+	}),
+	days: z.array(
+		z.object({
+			day: z.number().describe('1 for the first day of the trip.'),
+			theme: z.string().describe('Short headline for the day, e.g. "Alfama and the castle".'),
+			items: z.array(
+				z.object({
+					time: z.string().nullable().describe('24-hour HH:MM, or null if flexible.'),
+					kind: z.enum(PLAN_ITEM_KINDS),
+					title: z.string().describe('Name of the place or activity.'),
+					location: z.string().nullable().describe('Area or address, short.'),
+					details: z.string().describe('One or two sentences: why, and any practical tip.'),
+					estimatedCost: z
+						.number()
+						.nullable()
+						.describe('Rough cost for the whole group, in the budget currency.')
+				})
+			)
+		})
+	),
+	budget: z.object({
+		lines: z.array(
+			z.object({
+				category: z.enum(EXPENSE_CATEGORIES),
+				amount: z.number(),
+				note: z.string()
+			})
+		),
+		total: z.number()
+	}),
+	tips: z
+		.array(z.string())
+		.describe('Practical local tips: transport passes, reservations, scams.'),
+	packing: z.array(z.string()).describe('Items specific to this destination and these plans.')
+});
+export type TripPlan = z.infer<typeof TripPlanSchema>;
+export type PlanItem = TripPlan['days'][number]['items'][number];
+
+export const MAX_PLAN_DAYS = 14;
+
+/** Exact dates fix the length; otherwise the person chooses it. */
+export function planLength(window: WhenWindow, requested: number): number {
+	const days =
+		window.type === 'exact' ? daysBetween(window.start, window.end) + 1 : Math.round(requested);
+	return Math.min(Math.max(days, 1), MAX_PLAN_DAYS);
+}
+
+const KIND_MAP: Record<PlanItem['kind'], TimelineKind> = {
+	activity: 'other',
+	restaurant: 'restaurant',
+	transport: 'transport',
+	stay: 'stay'
+};
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Timeline rows for a plan: dated when the trip has dates, "Day N" ideas otherwise. */
+export function planToTimeline(plan: TripPlan, tripStart: string | null, currency: string) {
+	return plan.days.flatMap((day) =>
+		day.items
+			// The stay recommendation is an area, not a booking; it is shown separately.
+			.filter((item) => item.kind !== 'stay')
+			.map((item) => {
+				const cost =
+					item.estimatedCost !== null && item.estimatedCost > 0
+						? `About ${Math.round(item.estimatedCost)} ${currency}.`
+						: null;
+				return {
+					kind: KIND_MAP[item.kind],
+					title: tripStart ? item.title : `Day ${day.day}: ${item.title}`,
+					status: 'idea' as const,
+					startDate: tripStart ? addDays(tripStart, day.day - 1) : null,
+					startTime: tripStart && item.time && TIME_RE.test(item.time) ? item.time : null,
+					location: item.kind === 'transport' ? null : item.location,
+					notes: [item.details, cost].filter(Boolean).join(' ') || null
+				};
+			})
+	);
+}
+
+/**
+ * The SDK sends enum constraints to the model as hints rather than hard rules,
+ * so map anything unexpected to a safe value before validating.
+ */
+export function parsePlan(raw: unknown): TripPlan {
+	const plan = raw as {
+		days?: { items?: { kind?: unknown }[] }[];
+		budget?: { lines?: { category?: unknown }[] };
+	};
+	for (const day of plan?.days ?? []) {
+		for (const item of day.items ?? []) {
+			const kind = String(item.kind).toLowerCase();
+			item.kind = (PLAN_ITEM_KINDS as readonly string[]).includes(kind) ? kind : 'activity';
+		}
+	}
+	for (const line of plan?.budget?.lines ?? []) {
+		const category = String(line.category).toLowerCase();
+		line.category = (EXPENSE_CATEGORIES as readonly string[]).includes(category)
+			? category
+			: 'other';
+	}
+	return TripPlanSchema.parse(plan);
+}

@@ -132,3 +132,22 @@ export const expense = sqliteTable('expense', {
 });
 
 export type Expense = typeof expense.$inferSelect;
+
+/** An AI-drafted plan for a trip. Generated in the background, so it has a status. */
+export const tripPlan = sqliteTable('trip_plan', {
+	id: id(),
+	tripId: text('trip_id')
+		.notNull()
+		.references(() => trip.id, { onDelete: 'cascade' }),
+	status: text('status', { enum: ['pending', 'ready', 'failed'] })
+		.notNull()
+		.default('pending'),
+	// JSON: PlanRequest (what was asked) and TripPlan (the answer).
+	request: text('request').notNull(),
+	plan: text('plan'),
+	error: text('error'),
+	appliedAt: integer('applied_at', { mode: 'timestamp' }),
+	createdAt: createdAt()
+});
+
+export type TripPlanRow = typeof tripPlan.$inferSelect;

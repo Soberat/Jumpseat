@@ -29,6 +29,13 @@
       "when": 1790952935892,
       "tag": "0003_packing_and_expenses",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790954913102,
+      "tag": "0004_trip_plan",
+      "breakpoints": true
     }
   ]
 }

@@ -49,6 +49,8 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"dependencies": {
-		"better-sqlite3": "^13.0.2"
+		"@anthropic-ai/sdk": "^0.131.0",
+		"better-sqlite3": "^13.0.2",
+		"zod": "^4.6.5"
 	}
 }
