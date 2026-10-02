@@ -56,6 +56,12 @@ export const TripPlanSchema = z.object({
 			items: z.array(
 				z.object({
 					time: z.string().nullable().describe('24-hour HH:MM, or null if flexible.'),
+					durationMinutes: z
+						.number()
+						.nullable()
+						.describe(
+							'Realistic time it takes in minutes, including queues (e.g. 90 for dinner, 150 for a big museum). Null only for overnight stays.'
+						),
 					kind: z.enum(PLAN_ITEM_KINDS),
 					title: z.string().describe('Name of the place or activity.'),
 					location: z.string().nullable().describe('Area or address, short.'),
@@ -121,6 +127,10 @@ export function planToTimeline(plan: TripPlan, tripStart: string | null, currenc
 					status: 'idea' as const,
 					startDate: tripStart ? addDays(tripStart, day.day - 1) : null,
 					startTime: item.time && TIME_RE.test(item.time) ? item.time : null,
+					durationMinutes:
+						item.durationMinutes && item.durationMinutes > 0
+							? Math.min(Math.round(item.durationMinutes), 12 * 60)
+							: null,
 					day: day.day,
 					location: item.kind === 'transport' ? null : item.location,
 					notes: [item.details, cost].filter(Boolean).join(' ') || null
@@ -139,7 +149,9 @@ export function parsePlan(raw: unknown): TripPlan {
 		budget?: { lines?: { category?: unknown }[] };
 	};
 	for (const day of plan?.days ?? []) {
-		for (const item of day.items ?? []) {
+		for (const item of (day.items ?? []) as { kind?: unknown; durationMinutes?: unknown }[]) {
+			// Plans made before durations existed don't have one.
+			item.durationMinutes ??= null;
 			const kind = String(item.kind).toLowerCase();
 			item.kind = (PLAN_ITEM_KINDS as readonly string[]).includes(kind) ? kind : 'activity';
 		}

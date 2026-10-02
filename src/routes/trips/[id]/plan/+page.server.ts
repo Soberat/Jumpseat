@@ -9,7 +9,7 @@ import {
 	planLength,
 	PlanRequestSchema,
 	planToTimeline,
-	TripPlanSchema,
+	parsePlan,
 	type BudgetLevel,
 	type PlanRequest
 } from '#lib/plan.ts';
@@ -52,7 +52,7 @@ export const load: PageServerLoad = async ({ params }) => {
 			appliedAt: row.appliedAt,
 			createdAt: row.createdAt,
 			request: PlanRequestSchema.parse(JSON.parse(row.request)),
-			plan: row.plan ? TripPlanSchema.parse(JSON.parse(row.plan)) : null
+			plan: row.plan ? parsePlan(JSON.parse(row.plan)) : null
 		}
 	};
 };
@@ -104,7 +104,7 @@ export const actions: Actions = {
 		const found = await getTripPlan(params.id);
 		if (!found) error(404, 'Trip not found');
 
-		const plan = TripPlanSchema.parse(JSON.parse(row.plan));
+		const plan = parsePlan(JSON.parse(row.plan));
 		const req = PlanRequestSchema.parse(JSON.parse(row.request));
 		const rows = planToTimeline(plan, found.trip.startDate, req.currency);
 

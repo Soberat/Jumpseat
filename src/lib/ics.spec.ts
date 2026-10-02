@@ -40,6 +40,7 @@ const item = (extra: Partial<TimelineItem>): TimelineItem => ({
 	url: null,
 	notes: null,
 	day: null,
+	durationMinutes: null,
 	createdAt: new Date(0),
 	...extra
 });
@@ -52,7 +53,8 @@ describe('tripCalendar', () => {
 		const ics = tripCalendar(trip, [flight], [], now);
 		expect(ics).toContain('DTSTART;VALUE=DATE:20261105\r\nDTEND;VALUE=DATE:20261110');
 		expect(ics).toContain('SUMMARY:✈️ LH1166 FRA → LIS (standby)');
-		expect(ics).toContain('DTSTART:20261105T094000\r\nDTEND:20261105T104000');
+		// Block time estimated from the distance, FRA–LIS is about three hours.
+		expect(ics).toContain('DTSTART:20261105T094000\r\nDTEND:20261105T124000');
 		expect(ics.startsWith('BEGIN:VCALENDAR\r\n')).toBe(true);
 		expect(ics.endsWith('END:VCALENDAR\r\n')).toBe(true);
 	});
@@ -75,6 +77,16 @@ describe('tripCalendar', () => {
 		expect(ics).toContain('SUMMARY:Check-in: Hotel Avenida');
 		expect(ics).toContain('DTSTART:20261109T110000');
 		expect(ics).toContain('DESCRIPTION:Ref ABC\\; 123');
+	});
+
+	it('ends timed items after their duration, past midnight if needed', () => {
+		const ics = tripCalendar(
+			trip,
+			[],
+			[item({ startDate: '2026-11-06', startTime: '23:15', durationMinutes: 90 })],
+			now
+		);
+		expect(ics).toContain('DTSTART:20261106T231500\r\nDTEND:20261107T004500');
 	});
 
 	it('skips undated items and folds long lines', () => {

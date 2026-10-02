@@ -10,6 +10,7 @@
 	} from '#lib/timeline.ts';
 	import { daysBetween } from '#lib/climate.ts';
 	import { reveal } from '#lib/reveal.ts';
+	import { clockOf, formatDuration, minutesOf } from '#lib/duration.ts';
 	import Plane from './Plane.svelte';
 
 	let {
@@ -37,11 +38,6 @@
 			month: 'long'
 		});
 
-	const minutesOf = (t: string) => {
-		const [h, m] = t.split(':').map(Number);
-		return h * 60 + (m || 0);
-	};
-
 	function details(item: TimelineItem, phase: 'start' | 'end' | 'single'): string[] {
 		const parts: string[] = [];
 		if (item.kind === 'transport') {
@@ -53,6 +49,11 @@
 				parts.push([item.fromPlace, item.toPlace].filter(Boolean).join(' → '));
 		} else if (item.location) {
 			parts.push(item.location);
+		}
+		if (item.startTime && item.durationMinutes && phase === 'single') {
+			parts.push(
+				`until ${clockOf(minutesOf(item.startTime) + item.durationMinutes)} (${formatDuration(item.durationMinutes)})`
+			);
 		}
 		if (phase === 'start' && item.endDate && item.endDate !== item.startDate) {
 			parts.push(

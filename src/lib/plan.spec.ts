@@ -11,6 +11,7 @@ const plan: TripPlan = {
 			items: [
 				{
 					time: '19:30',
+					durationMinutes: 90,
 					kind: 'restaurant',
 					title: 'Taberna da Rua das Flores',
 					location: 'Chiado',
@@ -19,6 +20,7 @@ const plan: TripPlan = {
 				},
 				{
 					time: null,
+					durationMinutes: null,
 					kind: 'stay',
 					title: 'Baixa hotel',
 					location: null,
@@ -33,6 +35,7 @@ const plan: TripPlan = {
 			items: [
 				{
 					time: '9am',
+					durationMinutes: 0,
 					kind: 'activity',
 					title: 'Jerónimos Monastery',
 					location: 'Belém',
@@ -69,10 +72,16 @@ describe('planToTimeline', () => {
 			status: 'idea',
 			startDate: '2026-11-05',
 			startTime: '19:30',
+			durationMinutes: 90,
 			notes: 'Small, no bookings. About 70 EUR.'
 		});
 		// Malformed time is dropped rather than stored.
-		expect(rows[1]).toMatchObject({ kind: 'other', startDate: '2026-11-06', startTime: null });
+		expect(rows[1]).toMatchObject({
+			kind: 'other',
+			startDate: '2026-11-06',
+			startTime: null,
+			durationMinutes: null
+		});
 	});
 
 	it('keeps the day and time when the trip has no dates', () => {
@@ -94,6 +103,12 @@ describe('parsePlan', () => {
 		expect(parsed.days[0].items[0].kind).toBe('restaurant');
 		expect(parsed.days[1].items[0].kind).toBe('activity');
 		expect(parsed.budget.lines[0].category).toBe('other');
+	});
+
+	it('accepts plans saved before durations existed', () => {
+		const raw = JSON.parse(JSON.stringify(plan));
+		delete raw.days[0].items[0].durationMinutes;
+		expect(parsePlan(raw).days[0].items[0].durationMinutes).toBeNull();
 	});
 
 	it('still rejects a plan missing required parts', () => {

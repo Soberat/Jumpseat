@@ -1,0 +1,1 @@
+ALTER TABLE `timeline_item` ADD `duration_minutes` integer;

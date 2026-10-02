@@ -23,6 +23,7 @@ function item(over: Partial<TimelineItem>): TimelineItem {
 		url: null,
 		notes: null,
 		day: null,
+		durationMinutes: null,
 		createdAt: created,
 		...over
 	};

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Flight, TimelineItem } from '#lib/server/db/schema.ts';
-import { cardsByDay, journeyDays, stackCards, stayFor, timeAt, trayItems } from './journey.ts';
+import {
+	cardsByDay,
+	dayRange,
+	journeyDays,
+	layoutDay,
+	stayFor,
+	timeAt,
+	trayItems,
+	type JourneyCard
+} from './journey.ts';
 
 const item = (id: string, extra: Partial<TimelineItem>): TimelineItem => ({
 	id,
@@ -20,19 +29,28 @@ const item = (id: string, extra: Partial<TimelineItem>): TimelineItem => ({
 	url: null,
 	notes: null,
 	day: null,
+	durationMinutes: null,
 	createdAt: new Date(0),
 	...extra
 });
 
-const flight = { id: 'f', departureDate: '2026-11-05', departureTime: '09:40' } as Flight;
+const flight = {
+	id: 'f',
+	origin: 'KRK',
+	destination: 'MUC',
+	departureDate: '2026-11-05',
+	departureTime: '09:40'
+} as Flight;
 
 describe('timeAt', () => {
-	it('maps the column to 06:00–midnight in quarter hours', () => {
-		expect(timeAt(0)).toBe('06:00');
-		expect(timeAt(0.5)).toBe('15:00');
-		expect(timeAt(0.51)).toBe('15:15');
-		expect(timeAt(1)).toBe('23:45');
-		expect(timeAt(-3)).toBe('06:00');
+	const range = { start: 8 * 60, end: 22 * 60 };
+	it('maps the column to the drawn range in five-minute steps', () => {
+		expect(timeAt(0, range)).toBe('08:00');
+		expect(timeAt(0.5, range)).toBe('15:00');
+		expect(timeAt(0.503, range)).toBe('15:05');
+		expect(timeAt(0.5, range, 15)).toBe('15:00');
+		expect(timeAt(1, range)).toBe('21:55');
+		expect(timeAt(-3, range)).toBe('08:00');
 	});
 });
 
@@ -90,9 +108,43 @@ describe('cardsByDay and trayItems', () => {
 	});
 });
 
-describe('stackCards', () => {
-	it('pushes overlapping cards down and keeps them inside the column', () => {
-		expect(stackCards([0.1, 0.12, 0.5], 500, 60)).toEqual([50, 110, 250]);
-		expect(stackCards([0.95, 0.96], 500, 60)).toEqual([380, 440]);
+const card = (key: string, time: string | null, minutes: number): JourneyCard => ({
+	key,
+	type: 'item',
+	phase: null,
+	time,
+	movable: true,
+	minutes,
+	estimated: false
+});
+
+describe('layoutDay', () => {
+	it('measures free time between things and splits clashes into lanes', () => {
+		const { placed, gaps } = layoutDay([
+			card('breakfast', '08:00', 45),
+			card('museum', '09:30', 120),
+			card('call', '10:00', 30),
+			card('lunch', '13:00', 60),
+			card('anytime', null, 60)
+		]);
+		expect(placed.map((p) => [p.card.key, p.lane, p.lanes, p.overlaps])).toEqual([
+			['breakfast', 0, 1, false],
+			['museum', 0, 2, true],
+			['call', 1, 2, true],
+			['lunch', 0, 1, false]
+		]);
+		expect(gaps.map((g) => g.minutes)).toEqual([45, 90]);
+	});
+
+	it('counts back-to-back things as no gap', () => {
+		expect(layoutDay([card('a', '10:00', 60), card('b', '11:00', 30)]).gaps).toEqual([]);
+	});
+});
+
+describe('dayRange', () => {
+	it('widens to whole hours around early and late plans', () => {
+		const byDay = new Map([['d', [card('a', '06:40', 30), card('b', '22:10', 90)]]]);
+		expect(dayRange(byDay)).toEqual({ start: 6 * 60, end: 24 * 60 });
+		expect(dayRange(new Map())).toEqual({ start: 480, end: 1320 });
 	});
 });

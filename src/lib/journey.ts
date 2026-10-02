@@ -1,10 +1,17 @@
 import type { Flight, TimelineItem } from '#lib/server/db/schema.ts';
 import { addDays, daysBetween } from './climate.ts';
+import { clockOf, flightMinutes, itemMinutes, minutesOf } from './duration.ts';
 
-/** The journey view draws each day from 06:00 to midnight. */
-export const DAY_START = 6 * 60;
-export const DAY_END = 24 * 60;
-const SPAN = DAY_END - DAY_START;
+export { clockOf, minutesOf };
+
+/** The part of the day drawn, in minutes after midnight. */
+export interface DayRange {
+	start: number;
+	end: number;
+}
+
+/** Days are drawn from 08:00 to 22:00 at least, widened to fit what's planned. */
+export const DEFAULT_RANGE: DayRange = { start: 8 * 60, end: 22 * 60 };
 
 /** One column of the journey view. */
 export interface JourneyDay {
@@ -33,26 +40,16 @@ export interface JourneyCard {
 	time: string | null;
 	/** Can be dragged elsewhere (stays and cars span days, so they stay put). */
 	movable: boolean;
+	/** Length in minutes, and whether it's a typical length rather than one you set. */
+	minutes: number;
+	estimated: boolean;
 }
 
-export const minutesOf = (time: string) => {
-	const [h, m] = time.split(':').map(Number);
-	return h * 60 + (m || 0);
-};
-
-const pad = (n: number) => String(n).padStart(2, '0');
-export const clockOf = (minutes: number) => `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
-
-/** 0 at 06:00, 1 at midnight; earlier times sit at the top. */
-export function fractionOf(time: string): number {
-	return Math.min(1, Math.max(0, (minutesOf(time) - DAY_START) / SPAN));
-}
-
-/** The time at a point down a day column, snapped to a quarter hour. */
-export function timeAt(fraction: number): string {
+/** The time at a point down a day column, snapped to `step` minutes. */
+export function timeAt(fraction: number, range: DayRange, step = 5): string {
 	const f = Math.min(1, Math.max(0, fraction));
-	const m = Math.round((DAY_START + f * SPAN) / 15) * 15;
-	return clockOf(Math.min(m, DAY_END - 15));
+	const m = Math.round((range.start + f * (range.end - range.start)) / step) * step;
+	return clockOf(Math.min(Math.max(m, range.start), range.end - step, 1435));
 }
 
 /**
@@ -121,7 +118,9 @@ export function cardsByDay(
 				flight: f,
 				phase: null,
 				time: f.departureTime,
-				movable: false
+				movable: false,
+				minutes: flightMinutes(f),
+				estimated: true
 			});
 		}
 	}
@@ -134,7 +133,8 @@ export function cardsByDay(
 			item,
 			phase: phases ? phases[0] : null,
 			time: item.startTime,
-			movable: !spans
+			movable: !spans,
+			...itemMinutes(item)
 		});
 		if (spans && !undated) {
 			add(item.endDate, {
@@ -143,7 +143,8 @@ export function cardsByDay(
 				item,
 				phase: phases![1],
 				time: item.endTime,
-				movable: false
+				movable: false,
+				...itemMinutes(item)
 			});
 		}
 	}
@@ -169,20 +170,84 @@ export function stayFor(date: string | null, items: TimelineItem[]): TimelineIte
 	);
 }
 
+/** Draw range covering every timed card on the trip, in whole hours. */
+export function dayRange(byDay: Map<string, JourneyCard[]>): DayRange {
+	let { start, end } = DEFAULT_RANGE;
+	for (const cards of byDay.values()) {
+		for (const c of cards) {
+			if (!c.time) continue;
+			const from = minutesOf(c.time);
+			start = Math.min(start, Math.floor(from / 60) * 60);
+			end = Math.max(end, Math.min(24 * 60, Math.ceil((from + c.minutes) / 60) * 60));
+		}
+	}
+	return { start, end };
+}
+
+export interface PlacedCard {
+	card: JourneyCard;
+	start: number;
+	end: number;
+	/** Side-by-side position when things overlap. */
+	lane: number;
+	lanes: number;
+	/** Clashes with something else that day. */
+	overlaps: boolean;
+}
+
+/** The space between two things: free time, or (negative) a clash. */
+export interface Gap {
+	from: number;
+	to: number;
+	minutes: number;
+}
+
 /**
- * Vertical positions (px) for timed cards in a column, pushed down so they
- * don't overlap, then squeezed up again if they run off the bottom.
+ * Places a day's timed cards by start and length, splitting clashes into
+ * side-by-side lanes, and measures the free time between them.
  */
-export function stackCards(fractions: number[], height: number, cardHeight: number): number[] {
-	const tops: number[] = [];
-	for (const f of fractions) {
-		const want = f * height;
-		tops.push(Math.max(want, tops.length ? tops[tops.length - 1] + cardHeight : 0));
+export function layoutDay(cards: JourneyCard[]): { placed: PlacedCard[]; gaps: Gap[] } {
+	const timed = cards
+		.filter((c) => c.time)
+		.map((card) => {
+			const start = minutesOf(card.time!);
+			return {
+				card,
+				start,
+				end: Math.min(start + card.minutes, 24 * 60),
+				lane: 0,
+				lanes: 1,
+				overlaps: false
+			};
+		})
+		.sort((a, b) => a.start - b.start || b.end - a.end);
+
+	const placed: PlacedCard[] = [];
+	const gaps: Gap[] = [];
+	let cluster: PlacedCard[] = [];
+	let clusterEnd = -1;
+	const close = () => {
+		const lanes = Math.max(...cluster.map((p) => p.lane)) + 1;
+		for (const p of cluster) {
+			p.lanes = lanes;
+			p.overlaps = lanes > 1;
+		}
+	};
+	for (const p of timed) {
+		if (cluster.length && p.start >= clusterEnd) {
+			close();
+			if (p.start > clusterEnd)
+				gaps.push({ from: clusterEnd, to: p.start, minutes: p.start - clusterEnd });
+			cluster = [];
+		}
+		const used = new Set(cluster.filter((q) => q.end > p.start).map((q) => q.lane));
+		let lane = 0;
+		while (used.has(lane)) lane++;
+		p.lane = lane;
+		cluster.push(p);
+		placed.push(p);
+		clusterEnd = Math.max(clusterEnd, p.end);
 	}
-	let limit = height - cardHeight;
-	for (let i = tops.length - 1; i >= 0; i--) {
-		tops[i] = Math.max(0, Math.min(tops[i], limit));
-		limit = tops[i] - cardHeight;
-	}
-	return tops;
+	if (cluster.length) close();
+	return { placed, gaps };
 }

@@ -125,6 +125,10 @@
 					Time
 					<input type="time" name="startTime" />
 				</label>
+				<label class="col-span-full flex flex-col gap-1 sm:col-span-1">
+					How long
+					<input name="duration" placeholder="e.g. 45m, 1h30" inputmode="text" />
+				</label>
 			{/if}
 
 			<label class="flex flex-col gap-1">

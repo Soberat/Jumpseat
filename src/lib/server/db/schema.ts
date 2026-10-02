@@ -103,6 +103,8 @@ export const timelineItem = sqliteTable('timeline_item', {
 	// "Day 3 of the trip", for AI-plan ideas on trips whose dates aren't fixed yet.
 	// A real startDate wins; otherwise it's placed relative to the trip's start.
 	day: integer('day'),
+	// How long it takes, for things that happen within a day (a tour, dinner).
+	durationMinutes: integer('duration_minutes'),
 	createdAt: createdAt()
 });
 

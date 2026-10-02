@@ -22,6 +22,7 @@ How to plan:
 - Group each day geographically so people aren't crossing the city back and forth. Include realistic transport between areas only when it matters (a train to a day-trip town, an airport transfer).
 - Suggest real, well-established places by their actual names. Prefer places that have been around for years over the newest openings, since you can't check whether something is still open. Never invent addresses.
 - Each day should have breakfast/lunch/dinner suggestions only where they add something; don't pad.
+- Give every timed item a realistic duration and leave honest gaps for getting between places; the traveller plans minute by minute, so times plus durations must not overlap.
 - Account for the season and weather of the travel dates (beach days only when it's warm enough, indoor options in rainy months).
 - Respect anything already booked: build around existing stays, flights and plans instead of duplicating them.
 - Estimated costs are rough, for the whole group, in the requested currency. The budget lines should add up to the total and fit the budget amount if one was given; say so in the summary if the request can't fit.
@@ -36,7 +37,7 @@ function describeExisting(flights: Flight[], items: TimelineItem[]): string {
 		),
 		...items.map(
 			(i) =>
-				`- ${i.kind}${i.status === 'idea' ? ' idea' : ''}: ${i.title}${i.location ? ` (${i.location})` : ''}${i.startDate ? ` on ${i.startDate}${i.endDate && i.endDate !== i.startDate ? ` to ${i.endDate}` : ''}` : ''}`
+				`- ${i.kind}${i.status === 'idea' ? ' idea' : ''}: ${i.title}${i.location ? ` (${i.location})` : ''}${i.startDate ? ` on ${i.startDate}${i.endDate && i.endDate !== i.startDate ? ` to ${i.endDate}` : ''}` : i.day ? ` on day ${i.day}` : ''}${i.startTime ? ` at ${i.startTime}` : ''}${i.durationMinutes ? ` for ${i.durationMinutes} min` : ''}`
 		)
 	];
 	return lines.length ? lines.join('\n') : '- Nothing yet.';

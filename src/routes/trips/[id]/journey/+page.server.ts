@@ -5,6 +5,7 @@ import { timelineItem } from '#lib/server/db/schema.ts';
 import { field, getTripPlan, optionalField } from '#lib/server/trips.ts';
 import { getNearbySights } from '#lib/server/wikipedia.ts';
 import { scheduleTrip } from '#lib/schedule.ts';
+import { parseDuration } from '#lib/duration.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -60,6 +61,33 @@ export const actions: Actions = {
 			.update(timelineItem)
 			.set({ ...slotFrom(data), endDate: null, endTime: null })
 			.where(eq(timelineItem.id, id));
+	},
+
+	/** Changes when something starts and how long it takes. */
+	edit: async ({ params, request }) => {
+		const data = await request.formData();
+		const id = field(data, 'itemId');
+		const [item] = await db
+			.select()
+			.from(timelineItem)
+			.where(and(eq(timelineItem.id, id), eq(timelineItem.tripId, params.id)));
+		if (!item) return fail(404, { error: 'That entry is gone.' });
+		const changes: Partial<typeof item> = {};
+		if (data.has('time')) {
+			const time = field(data, 'time');
+			if (time && !TIME_RE.test(time)) return fail(400, { error: 'Times look like 14:30.' });
+			// Only things placed on a day can have a time.
+			if (item.startDate || item.day) changes.startTime = time || null;
+		}
+		if (data.has('duration')) {
+			const raw = field(data, 'duration');
+			const minutes = parseDuration(raw);
+			if (raw && minutes === null) return fail(400, { error: 'Try a length like 45m or 1h30.' });
+			changes.durationMinutes = minutes;
+		}
+		if (Object.keys(changes).length) {
+			await db.update(timelineItem).set(changes).where(eq(timelineItem.id, id));
+		}
 	},
 
 	/** Adds a new idea, from the tray's box or a suggested sight, optionally straight onto a day. */

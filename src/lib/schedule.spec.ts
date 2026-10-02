@@ -20,6 +20,7 @@ const item = (id: string, extra: Partial<TimelineItem>): TimelineItem => ({
 	url: null,
 	notes: null,
 	day: null,
+	durationMinutes: null,
 	createdAt: new Date(0),
 	...extra
 });

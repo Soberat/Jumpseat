@@ -7,37 +7,49 @@
 	import { itemIcon } from '#lib/timeline.ts';
 	import {
 		cardsByDay,
-		fractionOf,
+		dayRange,
 		journeyDays,
-		stackCards,
+		layoutDay,
 		stayFor,
 		timeAt,
 		trayItems,
 		type JourneyCard,
-		type JourneyDay
+		type JourneyDay,
+		type PlacedCard
 	} from '#lib/journey.ts';
+	import {
+		clockOf,
+		formatDuration,
+		itemMinutes,
+		minutesOf,
+		parseDuration as parseLength
+	} from '#lib/duration.ts';
 	import Plane from '#lib/components/Plane.svelte';
+	import DayBody from '#lib/components/DayBody.svelte';
 
 	let { data } = $props();
 
-	// ---- Optimistic placements, shown until the server confirms -------------
-	type Placement = { day: JourneyDay; time: string | null } | 'tray';
-	let pending = $state<Record<string, Placement>>({});
+	// ---- Optimistic changes, shown until the server confirms ---------------
+	let pending = $state<Record<string, Partial<TimelineItem>>>({});
+	/** Live length while a card is being pulled longer or shorter. */
+	let stretching = $state<{ id: string; minutes: number } | null>(null);
 
 	const items = $derived(
 		data.items.map((i): TimelineItem => {
 			const p = pending[i.id];
-			if (!p) return i;
-			if (p === 'tray') return { ...i, startDate: null, day: null, startTime: null };
-			return data.numbered
-				? { ...i, startDate: null, day: p.day.day, startTime: p.time }
-				: { ...i, startDate: p.day.date, startTime: p.time };
+			const next = p ? { ...i, ...p } : i;
+			return stretching?.id === i.id ? { ...next, durationMinutes: stretching.minutes } : next;
 		})
 	);
 	const days = $derived(
 		journeyDays(data.start, data.numbered, data.trip.endDate, data.flights, items)
 	);
 	const byDay = $derived(cardsByDay(data.flights, items, data.numbered));
+	const range = $derived(dayRange(byDay));
+	const layouts = $derived(
+		new Map([...byDay].map(([key, cards]) => [key, layoutDay(cards)] as const))
+	);
+	const EMPTY = { placed: [], gaps: [] };
 	const tray = $derived(trayItems(items, data.numbered));
 	const plannedTitles = $derived(new Set(data.items.map((i) => i.title.toLowerCase())));
 
@@ -49,6 +61,23 @@
 	let trackW = $state(0);
 	let scrollY = $state(0);
 	let bodyH = $state(400);
+	/** The day open in the by-the-minute view, if any. */
+	let zoom = $state<string | null>(null);
+	let zoomScroller = $state<HTMLDivElement>();
+	/** Pixels per minute when zoomed: an hour is 120px. */
+	const ZOOM_SCALE = 2;
+	const zoomDay = $derived(days.find((d) => d.key === zoom) ?? null);
+
+	function openZoom(key: string) {
+		zoom = key;
+		// Start at the first thing planned that day.
+		requestAnimationFrame(() => {
+			const first = layouts.get(key)?.placed[0];
+			if (zoomScroller && first) {
+				zoomScroller.scrollTop = Math.max(0, (first.start - range.start) * ZOOM_SCALE - 60);
+			}
+		});
+	}
 	const travel = $derived(Math.max(0, trackW - viewW));
 	const progress = $derived(travel ? Math.min(1, scrollY / travel) : 0);
 	const colW = $derived(days.length ? trackW / days.length : 1);
@@ -92,27 +121,38 @@
 	});
 
 	// ---- Drag and drop (pointer events, so it works with touch too) ---------
-	type Payload = { type: 'item'; item: TimelineItem } | { type: 'sight'; sight: Sight };
+	type Payload =
+		| { type: 'item'; item: TimelineItem; minutes: number }
+		| { type: 'sight'; sight: Sight; minutes: number };
+	type Over = { key: string; time: string | null; y: number; h: number } | 'tray' | null;
 	let drag = $state<{ payload: Payload; label: string; icon: string; x: number; y: number } | null>(
 		null
 	);
-	let over = $state<{ key: string; time: string | null; y: number } | 'tray' | null>(null);
+	let over = $state<Over>(null);
 	let justDragged = false;
 	let message = $state<string | null>(null);
 
-	function locate(x: number, y: number) {
+	/** What's under the pointer. `grab` is how far below the card's top it was picked up. */
+	function locate(x: number, y: number, grab: number, minutes: number) {
 		const el = document.elementFromPoint(x, y);
 		const col = el?.closest<HTMLElement>('[data-day]');
-		if (col) {
-			const body = col.querySelector<HTMLElement>('[data-body]')!.getBoundingClientRect();
-			over =
-				y >= body.top
-					? {
-							key: col.dataset.day!,
-							time: timeAt((y - body.top) / body.height),
-							y: Math.min(y - body.top, body.height)
-						}
-					: { key: col.dataset.day!, time: null, y: 0 };
+		const bodyEl = col?.querySelector<HTMLElement>('[data-body]');
+		if (col && bodyEl) {
+			const box = bodyEl.getBoundingClientRect();
+			const start = Number(bodyEl.dataset.start);
+			const end = Number(bodyEl.dataset.end);
+			const perMinute = box.height / (end - start);
+			if (y < box.top) {
+				over = { key: col.dataset.day!, time: null, y: 0, h: 0 };
+				return;
+			}
+			const time = timeAt((y - grab - box.top) / box.height, { start, end });
+			over = {
+				key: col.dataset.day!,
+				time,
+				y: (minutesOf(time) - start) * perMinute,
+				h: minutes * perMinute
+			};
 		} else if (el?.closest('[data-tray]')) over = 'tray';
 		else over = null;
 	}
@@ -122,16 +162,25 @@
 		const touch = e.pointerType !== 'mouse';
 		const x0 = e.clientX;
 		const y0 = e.clientY;
+		// Keep the card's top under the same spot it was grabbed, so drops land where they look.
+		const card = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const grab = (e.currentTarget as HTMLElement).closest('[data-body]') ? y0 - card.top : 0;
 		let started = false;
 		let raf = 0;
 		let last = { x: x0, y: y0 };
 
 		const autoscroll = () => {
-			if (!drag || !scroller) return;
+			if (!drag) return;
 			const edge = 48;
-			if (last.x > viewW - edge) scroller.scrollTop += 14;
-			else if (last.x < edge) scroller.scrollTop -= 14;
-			locate(last.x, last.y);
+			if (zoom && zoomScroller) {
+				const box = zoomScroller.getBoundingClientRect();
+				if (last.y > box.bottom - edge) zoomScroller.scrollTop += 10;
+				else if (last.y < box.top + edge) zoomScroller.scrollTop -= 10;
+			} else if (scroller) {
+				if (last.x > viewW - edge) scroller.scrollTop += 14;
+				else if (last.x < edge) scroller.scrollTop -= 14;
+			}
+			locate(last.x, last.y, grab, payload.minutes);
 			raf = requestAnimationFrame(autoscroll);
 		};
 		const begin = () => {
@@ -156,7 +205,7 @@
 			}
 			drag!.x = ev.clientX;
 			drag!.y = ev.clientY;
-			locate(ev.clientX, ev.clientY);
+			locate(ev.clientX, ev.clientY, grab, payload.minutes);
 		};
 		const up = () => {
 			if (started) {
@@ -180,7 +229,43 @@
 		window.addEventListener('pointercancel', stop);
 	}
 
-	async function post(action: 'place' | 'addIdea', fields: Record<string, string>) {
+	function pressCard(e: PointerEvent, c: JourneyCard) {
+		if (!c.movable || !c.item) return;
+		press(e, { type: 'item', item: c.item, minutes: c.minutes }, c.item.title, cardIcon(c));
+	}
+
+	/** Pull a card's bottom edge to change how long it takes (five-minute steps). */
+	function pressResize(e: PointerEvent, p: PlacedCard, bodyEl: HTMLElement) {
+		if (e.button !== 0 || !p.card.item) return;
+		const id = p.card.item.id;
+		const move = (ev: PointerEvent) => {
+			const box = bodyEl.getBoundingClientRect();
+			const start = Number(bodyEl.dataset.start);
+			const end = Number(bodyEl.dataset.end);
+			const at = start + ((ev.clientY - box.top) / box.height) * (end - start);
+			const minutes = Math.max(5, Math.round((at - p.start) / 5) * 5);
+			stretching = { id, minutes: Math.min(minutes, 24 * 60 - p.start) };
+		};
+		const up = async () => {
+			window.removeEventListener('pointermove', move);
+			window.removeEventListener('pointerup', up);
+			window.removeEventListener('pointercancel', up);
+			justDragged = true;
+			setTimeout(() => (justDragged = false), 0);
+			if (!stretching) return;
+			const minutes = stretching.minutes;
+			pending[id] = { ...pending[id], durationMinutes: minutes };
+			stretching = null;
+			await post('edit', { itemId: id, duration: String(minutes) });
+			await invalidateAll();
+			pending = {};
+		};
+		window.addEventListener('pointermove', move);
+		window.addEventListener('pointerup', up);
+		window.addEventListener('pointercancel', up);
+	}
+
+	async function post(action: 'place' | 'addIdea' | 'edit', fields: Record<string, string>) {
 		const body = new FormData();
 		for (const [k, v] of Object.entries(fields)) body.set(k, v);
 		const res = await fetch(`?/${action}`, {
@@ -199,19 +284,25 @@
 			: { date: day.date ?? '', time: time ?? '' };
 	}
 
+	function slotChanges(day: JourneyDay, time: string | null): Partial<TimelineItem> {
+		return data.numbered
+			? { startDate: null, day: day.day, startTime: time }
+			: { startDate: day.date, startTime: time };
+	}
+
 	async function drop() {
 		const target = over;
 		const payload = drag?.payload;
 		if (!target || !payload) return;
 		if (target === 'tray') {
 			if (payload.type !== 'item') return;
-			pending[payload.item.id] = 'tray';
+			pending[payload.item.id] = { startDate: null, day: null, startTime: null };
 			await post('place', { itemId: payload.item.id });
 		} else {
 			const day = days.find((d) => d.key === target.key);
 			if (!day) return;
 			if (payload.type === 'item') {
-				pending[payload.item.id] = { day, time: target.time };
+				pending[payload.item.id] = slotChanges(day, target.time);
 				await post('place', { itemId: payload.item.id, ...slotFields(day, target.time) });
 			} else {
 				const s = payload.sight;
@@ -244,23 +335,44 @@
 	async function unplace(card: JourneyCard) {
 		selected = null;
 		if (!card.item) return;
-		pending[card.item.id] = 'tray';
+		pending[card.item.id] = { startDate: null, day: null, startTime: null };
 		await post('place', { itemId: card.item.id });
 		await invalidateAll();
 		pending = {};
 	}
 
+	// Time and length, edited exactly in the details sheet.
+	let editTime = $state('');
+	let editDuration = $state('');
+	function select(c: JourneyCard) {
+		if (justDragged) return;
+		selected = c;
+		editTime = c.time ?? '';
+		editDuration = c.item?.durationMinutes
+			? formatDuration(c.item.durationMinutes).replace(' ', '')
+			: '';
+	}
+	async function saveEdit(e: SubmitEvent) {
+		e.preventDefault();
+		const c = selected;
+		if (!c?.item) return;
+		selected = null;
+		await post('edit', { itemId: c.item.id, time: editTime, duration: editDuration });
+		await invalidateAll();
+	}
+	const QUICK = [15, 30, 45, 60, 90, 120, 180];
+
+	/** Planned and free time between the first and last thing on a day. */
+	function dayStats(key: string) {
+		const l = layouts.get(key);
+		if (!l || l.placed.length === 0) return null;
+		const free = l.gaps.reduce((a, g) => a + g.minutes, 0);
+		const first = Math.min(...l.placed.map((p) => p.start));
+		const last = Math.max(...l.placed.map((p) => p.end));
+		return { busy: last - first - free, free, first, last };
+	}
+
 	// ---- Presentation helpers -----------------------------------------------
-	const CARD_H = 58;
-	const STRIPE: Record<string, string> = {
-		flight: 'bg-sky-500',
-		stay: 'bg-indigo-500',
-		car: 'bg-runway',
-		transport: 'bg-teal-500',
-		restaurant: 'bg-rose-500',
-		other: 'bg-violet-500'
-	};
-	const HOURS = [6, 9, 12, 15, 18, 21];
 	const weekday = (d: string) =>
 		new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' });
 	const dateLabel = (d: string) =>
@@ -268,8 +380,72 @@
 	const cardTitle = (c: JourneyCard) =>
 		c.type === 'flight' ? `${c.flight!.origin} → ${c.flight!.destination}` : c.item!.title;
 	const cardIcon = (c: JourneyCard) => (c.type === 'flight' ? '✈️' : itemIcon(c.item!));
-	const kindOf = (c: JourneyCard) => (c.type === 'flight' ? 'flight' : c.item!.kind);
 </script>
+
+{#snippet dayHeader(
+	d: JourneyDay,
+	i: number,
+	untimed: JourneyCard[],
+	target: { time: string | null } | null,
+	stats: ReturnType<typeof dayStats>
+)}
+	<div class={['relative px-4 pb-2', zoom === d.key ? 'pt-3' : 'pt-11']}>
+		<span
+			class="pointer-events-none absolute top-1 right-3 font-display text-7xl leading-none font-bold text-slate-900/5 dark:text-white/5"
+			aria-hidden="true">{d.day}</span
+		>
+		<div class="flex items-center gap-2">
+			<span
+				class={[
+					'flex size-6 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold ring-4 ring-paper dark:ring-ink-950',
+					i === current || zoom === d.key
+						? 'bg-runway text-ink-950'
+						: 'bg-slate-300 dark:bg-ink-700'
+				]}>{d.day}</span
+			>
+			<div class="min-w-0 flex-1 leading-tight">
+				<div class="font-semibold">{d.date ? weekday(d.date) : `Day ${d.day}`}</div>
+				<div class="truncate text-xs text-slate-500 dark:text-slate-400">
+					{d.date ? dateLabel(d.date) : 'Dates not set yet'}{stats
+						? ` · ${clockOf(stats.first)}–${clockOf(stats.last)}, ${formatDuration(stats.free)} free`
+						: ''}
+				</div>
+			</div>
+			{#if zoom !== d.key}
+				<button
+					type="button"
+					onclick={() => openZoom(d.key)}
+					class="relative shrink-0 rounded-full bg-ink-900 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-ink-700 dark:bg-white dark:text-ink-950"
+					>⏱ By the minute</button
+				>
+			{/if}
+		</div>
+		<!-- Things with a day but no time -->
+		<div
+			class={[
+				'mt-2 flex min-h-8 flex-wrap gap-1.5 rounded-lg',
+				target && target.time === null && 'ring-2 ring-runway'
+			]}
+		>
+			{#each untimed as c (c.key)}
+				<button
+					type="button"
+					onpointerdown={(e) => pressCard(e, c)}
+					oncontextmenu={(e) => e.preventDefault()}
+					onclick={() => select(c)}
+					class="flex max-w-full items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium shadow-sm select-none [-webkit-touch-callout:none] dark:bg-ink-800"
+				>
+					<span aria-hidden="true">{cardIcon(c)}</span>
+					<span class="truncate">{cardTitle(c)}</span>
+				</button>
+			{:else}
+				<span class="py-1 text-xs text-slate-400 dark:text-slate-500"
+					>{target && target.time === null ? 'Drop for any time' : ''}</span
+				>
+			{/each}
+		</div>
+	</div>
+{/snippet}
 
 <svelte:head><title>{data.trip.title} · Journey</title></svelte:head>
 
@@ -327,6 +503,55 @@
 
 			<!-- The journey -->
 			<div class="relative flex-1 overflow-hidden">
+				{#if zoomDay}
+					{@const d = zoomDay}
+					{@const target = over && over !== 'tray' && over.key === d.key ? over : null}
+					<!-- One day, by the minute -->
+					<div
+						data-day={d.key}
+						class="absolute inset-0 z-30 flex animate-rise flex-col bg-paper dark:bg-ink-950"
+					>
+						<div
+							class="flex items-center gap-2 border-b border-slate-200 pr-2 dark:border-white/10"
+						>
+							<button
+								type="button"
+								onclick={() => (zoom = null)}
+								class="ml-3 shrink-0 rounded-full bg-slate-200 px-3 py-1 text-sm font-medium dark:bg-ink-800"
+								>← All days</button
+							>
+							<div class="min-w-0 flex-1">
+								{@render dayHeader(
+									d,
+									days.indexOf(d),
+									(byDay.get(d.key) ?? []).filter((c) => !c.time),
+									target,
+									dayStats(d.key)
+								)}
+							</div>
+						</div>
+						<div
+							bind:this={zoomScroller}
+							class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4"
+						>
+							<div class="mx-auto max-w-2xl">
+								<DayBody
+									zoomed
+									layout={layouts.get(d.key) ?? EMPTY}
+									{range}
+									height={(range.end - range.start) * ZOOM_SCALE}
+									stay={stayFor(d.date, items)}
+									target={target && target.time ? target : null}
+									draggingId={drag?.payload.type === 'item' ? drag.payload.item.id : null}
+									onpress={pressCard}
+									onresize={pressResize}
+									onselect={select}
+								/>
+							</div>
+						</div>
+					</div>
+				{/if}
+
 				<div
 					bind:this={track}
 					class="absolute inset-y-0 left-0 flex will-change-transform"
@@ -342,148 +567,30 @@
 					</div>
 
 					{#each days as d, i (d.key)}
-						{@const cards = byDay.get(d.key) ?? []}
-						{@const timed = cards.filter((c) => c.time)}
-						{@const untimed = cards.filter((c) => !c.time)}
-						{@const tops = stackCards(
-							timed.map((c) => fractionOf(c.time!)),
-							bodyH,
-							CARD_H
-						)}
+						{@const untimed = (byDay.get(d.key) ?? []).filter((c) => !c.time)}
 						{@const stay = stayFor(d.date, items)}
-						{@const target = over && over !== 'tray' && over.key === d.key ? over : null}
+						{@const stats = dayStats(d.key)}
+						{@const target = !zoom && over && over !== 'tray' && over.key === d.key ? over : null}
 						<section
-							data-day={d.key}
+							data-day={zoom ? undefined : d.key}
 							class={[
 								'relative flex h-full w-[calc(100vw-40px)] shrink-0 flex-col border-r border-slate-300/50 sm:w-[340px] dark:border-white/10',
 								target && 'bg-runway/10'
 							]}
 						>
-							<!-- Day header -->
-							<div class="relative px-4 pt-11 pb-2">
-								<span
-									class="pointer-events-none absolute top-1 right-3 font-display text-7xl leading-none font-bold text-slate-900/5 dark:text-white/5"
-									aria-hidden="true">{d.day}</span
-								>
-								<div class="flex items-center gap-2">
-									<span
-										class={[
-											'flex size-6 items-center justify-center rounded-full font-mono text-[11px] font-bold ring-4 ring-paper dark:ring-ink-950',
-											i === current ? 'bg-runway text-ink-950' : 'bg-slate-300 dark:bg-ink-700'
-										]}>{d.day}</span
-									>
-									<div class="leading-tight">
-										<div class="font-semibold">{d.date ? weekday(d.date) : `Day ${d.day}`}</div>
-										<div class="text-xs text-slate-500 dark:text-slate-400">
-											{d.date ? dateLabel(d.date) : 'Dates not set yet'}
-										</div>
-									</div>
-								</div>
-								<!-- Things with a day but no time -->
-								<div
-									class={[
-										'mt-2 flex min-h-8 flex-wrap gap-1.5 rounded-lg',
-										target && target.time === null && 'ring-2 ring-runway'
-									]}
-								>
-									{#each untimed as c (c.key)}
-										<button
-											type="button"
-											onpointerdown={(e) =>
-												c.movable &&
-												c.item &&
-												press(e, { type: 'item', item: c.item }, c.item.title, cardIcon(c))}
-											oncontextmenu={(e) => e.preventDefault()}
-											onclick={() => !justDragged && (selected = c)}
-											class="flex max-w-full items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium shadow-sm select-none [-webkit-touch-callout:none] dark:bg-ink-800"
-										>
-											<span aria-hidden="true">{cardIcon(c)}</span>
-											<span class="truncate">{cardTitle(c)}</span>
-										</button>
-									{:else}
-										<span class="py-1 text-xs text-slate-400 dark:text-slate-500"
-											>{target && target.time === null ? 'Drop for any time' : ''}</span
-										>
-									{/each}
-								</div>
-							</div>
-
+							{@render dayHeader(d, i, untimed, target, stats)}
 							<!-- The day itself, dawn at the top and night at the bottom -->
-							<div
-								data-body
-								class="sky relative mx-2 mb-2 flex-1 rounded-2xl"
-								bind:clientHeight={bodyH}
-							>
-								{#each HOURS as h (h)}
-									<div
-										class="pointer-events-none absolute inset-x-0 border-t border-slate-900/5 dark:border-white/5"
-										style="top: {((h - 6) / 18) * 100}%"
-									>
-										<span
-											class="absolute top-0.5 left-1.5 font-mono text-[9px] text-slate-500/80 dark:text-white/40"
-											>{String(h).padStart(2, '0')}</span
-										>
-									</div>
-								{/each}
-
-								{#if stay}
-									<div
-										class="pointer-events-none absolute inset-x-2 bottom-2 flex items-center gap-1.5 truncate rounded-lg bg-white/10 px-2 py-1 text-xs text-white/90"
-									>
-										<span aria-hidden="true">🌙</span>
-										<span class="truncate">{stay.title}</span>
-									</div>
-								{/if}
-
-								{#each timed as c, j (c.key)}
-									{@const idea = c.item?.status === 'idea'}
-									<button
-										type="button"
-										onpointerdown={(e) =>
-											c.movable &&
-											c.item &&
-											press(e, { type: 'item', item: c.item }, c.item.title, cardIcon(c))}
-										oncontextmenu={(e) => e.preventDefault()}
-										onclick={() => !justDragged && (selected = c)}
-										class={[
-											'absolute inset-x-2 flex animate-rise items-center gap-2 overflow-hidden rounded-xl bg-white/95 pr-2 text-left shadow-md transition select-none [-webkit-touch-callout:none] hover:shadow-lg dark:bg-ink-800/95',
-											idea && 'outline-2 -outline-offset-2 outline-violet-400/60 outline-dashed',
-											c.movable ? 'cursor-grab' : 'cursor-default',
-											drag?.payload.type === 'item' &&
-												drag.payload.item.id === c.item?.id &&
-												'opacity-30'
-										]}
-										style="top: {tops[j]}px; height: {CARD_H - 6}px; animation-delay: {j * 50}ms"
-									>
-										<span class={['h-full w-1.5 shrink-0', STRIPE[kindOf(c)]]}></span>
-										<span class="text-lg" aria-hidden="true">{cardIcon(c)}</span>
-										<span class="min-w-0 flex-1 leading-tight">
-											<span class="block font-mono text-[10px] text-slate-500 dark:text-slate-400">
-												{c.time}{c.phase ? ` · ${c.phase}` : ''}{c.flight
-													? ` · ${c.flight.flightNumber}`
-													: ''}{idea ? ' · idea' : ''}
-											</span>
-											<span class="block truncate text-sm font-semibold">{cardTitle(c)}</span>
-											{#if c.item?.location}
-												<span class="block truncate text-[11px] text-slate-500 dark:text-slate-400"
-													>{c.item.location}</span
-												>
-											{/if}
-										</span>
-									</button>
-								{/each}
-
-								{#if target && target.time}
-									<div
-										class="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-runway"
-										style="top: {target.y}px"
-									>
-										<span
-											class="absolute -top-3 right-2 rounded-full bg-runway px-2 py-0.5 font-mono text-[11px] font-bold text-ink-950"
-											>{target.time}</span
-										>
-									</div>
-								{/if}
+							<div class="mx-2 mb-2 min-h-0 flex-1" bind:clientHeight={bodyH}>
+								<DayBody
+									layout={layouts.get(d.key) ?? EMPTY}
+									{range}
+									height={bodyH}
+									{stay}
+									target={target && target.time ? target : null}
+									draggingId={drag?.payload.type === 'item' ? drag.payload.item.id : null}
+									onpress={pressCard}
+									onselect={select}
+								/>
 							</div>
 						</section>
 					{/each}
@@ -541,7 +648,13 @@
 						{#each tray as item (item.id)}
 							<button
 								type="button"
-								onpointerdown={(e) => press(e, { type: 'item', item }, item.title, itemIcon(item))}
+								onpointerdown={(e) =>
+									press(
+										e,
+										{ type: 'item', item, minutes: itemMinutes(item).minutes },
+										item.title,
+										itemIcon(item)
+									)}
 								oncontextmenu={(e) => e.preventDefault()}
 								class="flex max-w-56 shrink-0 cursor-grab items-center gap-2 rounded-xl border border-dashed border-violet-300 bg-violet-50 px-3 py-1.5 text-left text-sm select-none [-webkit-touch-callout:none] dark:border-violet-700 dark:bg-violet-950/40"
 							>
@@ -560,7 +673,8 @@
 							{#each sights.filter((s) => !plannedTitles.has(s.title.toLowerCase())) as s (s.title)}
 								<button
 									type="button"
-									onpointerdown={(e) => press(e, { type: 'sight', sight: s }, s.title, '📍')}
+									onpointerdown={(e) =>
+										press(e, { type: 'sight', sight: s, minutes: 90 }, s.title, '📍')}
 									oncontextmenu={(e) => e.preventDefault()}
 									class="flex max-w-60 shrink-0 cursor-grab items-center gap-2 rounded-xl border border-slate-200 bg-white p-1.5 pr-3 text-left text-sm select-none [-webkit-touch-callout:none] dark:border-white/10 dark:bg-ink-800"
 								>
@@ -636,7 +750,12 @@
 				<span class="text-3xl" aria-hidden="true">{cardIcon(c)}</span>
 				<div class="min-w-0 flex-1">
 					<div class="font-mono text-xs text-slate-500 dark:text-slate-400">
-						{[c.phase, c.time ?? 'Any time', c.item?.status === 'idea' ? 'idea' : null]
+						{[
+							c.phase,
+							c.time ? `${c.time}–${clockOf(minutesOf(c.time) + c.minutes)}` : 'Any time',
+							`${c.estimated ? '~' : ''}${formatDuration(c.minutes)}`,
+							c.item?.status === 'idea' ? 'idea' : null
+						]
 							.filter(Boolean)
 							.join(' · ')}
 					</div>
@@ -657,6 +776,47 @@
 					aria-label="Close">✕</button
 				>
 			</div>
+			{#if c.item && c.movable}
+				<form onsubmit={saveEdit} class="space-y-2 rounded-2xl bg-slate-50 p-3 dark:bg-ink-800">
+					<div class="flex flex-wrap items-end gap-2">
+						{#if c.item.startDate || c.item.day}
+							<label class="flex flex-col gap-1 text-xs font-medium text-slate-500">
+								Starts
+								<input type="time" bind:value={editTime} class="w-28" />
+							</label>
+						{/if}
+						<label class="flex flex-1 flex-col gap-1 text-xs font-medium text-slate-500">
+							Takes
+							<input
+								bind:value={editDuration}
+								placeholder={c.estimated ? `about ${formatDuration(c.minutes)}` : 'e.g. 1h30'}
+								class="min-w-24"
+							/>
+						</label>
+						<button
+							type="submit"
+							class="rounded-full bg-runway px-4 py-2 text-sm font-semibold text-ink-950"
+							>Save</button
+						>
+					</div>
+					<div class="flex flex-wrap gap-1.5">
+						{#each QUICK as m (m)}
+							<button
+								type="button"
+								onclick={() => (editDuration = formatDuration(m).replace(' ', ''))}
+								class="rounded-full border border-slate-300 px-2.5 py-0.5 font-mono text-xs dark:border-white/20"
+								>{formatDuration(m)}</button
+							>
+						{/each}
+					</div>
+					{#if editTime && (editDuration || c.minutes)}
+						{@const length = parseLength(editDuration) ?? c.minutes}
+						<p class="font-mono text-xs text-slate-500 dark:text-slate-400">
+							{editTime}–{clockOf(minutesOf(editTime) + length)}
+						</p>
+					{/if}
+				</form>
+			{/if}
 			{#if c.item?.notes}
 				<p class="text-sm whitespace-pre-line">{c.item.notes}</p>
 			{/if}
@@ -687,33 +847,3 @@
 		</div>
 	</div>
 {/if}
-
-<style>
-	/* Dawn, a bright day, sunset, then night: the column reads like the sky. */
-	.sky {
-		background: linear-gradient(
-			to bottom,
-			#fde9cf 0%,
-			#e3f1fb 14%,
-			#e3f1fb 55%,
-			#fde0c2 70%,
-			#d9c8f5 78%,
-			#3a3a8c 88%,
-			#141c46 100%
-		);
-	}
-	@media (prefers-color-scheme: dark) {
-		.sky {
-			background: linear-gradient(
-				to bottom,
-				#2c2433 0%,
-				#10284a 14%,
-				#10284a 55%,
-				#3b2440 70%,
-				#271f52 78%,
-				#121a3f 88%,
-				#070b1f 100%
-			);
-		}
-	}
-</style>

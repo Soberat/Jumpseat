@@ -1,6 +1,7 @@
 import type { Flight, TimelineItem, Trip } from '#lib/server/db/schema.ts';
 import { addDays } from './climate.ts';
 import { itemIcon, MODE_LABELS } from './timeline.ts';
+import { clockOf, flightMinutes, minutesOf } from './duration.ts';
 
 /*
  * iCalendar (RFC 5545) export. Times are "floating": 09:40 stays 09:40 in
@@ -14,6 +15,8 @@ interface CalEvent {
 	/** All-day: [first day, last day] inclusive. Timed: date plus HH:MM. */
 	start: { date: string; time?: string | null };
 	end?: { date: string; time?: string | null };
+	/** Length of a timed event without an explicit end; an hour if unknown. */
+	minutes?: number;
 	location?: string | null;
 	description?: string | null;
 	url?: string | null;
@@ -42,11 +45,9 @@ function fold(line: string): string {
 	return out.join('\r\n ');
 }
 
-function plusOneHour(date: string, time: string): { date: string; time: string } {
-	const [h, m] = time.split(':').map(Number);
-	if (h < 23)
-		return { date, time: `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}` };
-	return { date: addDays(date, 1), time: `00:${String(m).padStart(2, '0')}` };
+function plusMinutes(date: string, time: string, minutes: number): { date: string; time: string } {
+	const end = minutesOf(time) + minutes;
+	return { date: addDays(date, Math.floor(end / 1440)), time: clockOf(end) };
 }
 
 function eventLines(e: CalEvent, stamp: string): string[] {
@@ -54,7 +55,7 @@ function eventLines(e: CalEvent, stamp: string): string[] {
 	if (e.start.time) {
 		const end = e.end?.time
 			? { date: e.end.date, time: e.end.time }
-			: plusOneHour(e.start.date, e.start.time);
+			: plusMinutes(e.start.date, e.start.time, e.minutes ?? 60);
 		lines.push(`DTSTART:${compactDate(e.start.date)}T${compactTime(e.start.time)}`);
 		lines.push(`DTEND:${compactDate(end.date)}T${compactTime(end.time)}`);
 	} else {
@@ -130,6 +131,7 @@ function itemEvents(item: TimelineItem): CalEvent[] {
 					? `${title} (${MODE_LABELS[item.mode]})`
 					: title,
 			start: { date: item.startDate, time: item.startTime },
+			minutes: item.durationMinutes ?? undefined,
 			...base
 		}
 	];
@@ -158,6 +160,7 @@ export function tripCalendar(
 			uid: `flight-${f.id}@jumpseat`,
 			summary: `✈️ ${f.flightNumber} ${f.origin} → ${f.destination}${f.standby ? ' (standby)' : ''}`,
 			start: { date: f.departureDate, time: f.departureTime },
+			minutes: flightMinutes(f),
 			location: f.origin
 		});
 	}

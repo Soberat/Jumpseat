@@ -20,6 +20,7 @@ import { field, getLoadsForFlights, getTripPlan, optionalField } from '#lib/serv
 import { parseOrigin, tripRoute } from '#lib/trip-route.ts';
 import { buildGantt } from '#lib/gantt.ts';
 import { scheduleTrip } from '#lib/schedule.ts';
+import { parseDuration } from '#lib/duration.ts';
 import {
 	buildTimeline,
 	TIMELINE_KINDS,
@@ -181,6 +182,7 @@ export const actions: Actions = {
 			status: data.get('status') === 'idea' ? 'idea' : 'booked',
 			startDate,
 			startTime: startDate ? optionalField(data, 'startTime') : null,
+			durationMinutes: spans ? null : parseDuration(field(data, 'duration')),
 			endDate,
 			endTime: endDate ? optionalField(data, 'endTime') : null,
 			location: kind === 'transport' ? null : optionalField(data, 'location'),
