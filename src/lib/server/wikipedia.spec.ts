@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { getNearbySights, searchPoints } from './wikipedia.ts';
+import { distanceKm } from '#lib/route.ts';
+import { getNearbySights, searchRings } from './wikipedia.ts';
 
 const page = (pageid: number, title: string, views?: number) => ({
 	pageid,
@@ -10,11 +11,17 @@ const page = (pageid: number, title: string, views?: number) => ({
 });
 
 describe('getNearbySights', () => {
-	it('searches a ring around the centre', () => {
-		const points = searchPoints(29, -13.6);
-		expect(points).toHaveLength(7);
-		expect(points[1].lat).toBeCloseTo(29, 5);
-		expect(points[1].lon).toBeGreaterThan(-13.6);
+	it('reaches the far corners of an island like Lanzarote', () => {
+		const points = searchRings(29.01, -13.641).flat();
+		expect(points).toHaveLength(19);
+		const far = [
+			{ lat: 29.157, lon: -13.432 }, // Jameos del Agua
+			{ lat: 29.214, lon: -13.481 }, // Mirador del Río
+			{ lat: 28.85, lon: -13.79 } // Papagayo beaches
+		];
+		for (const sight of far) {
+			expect(Math.min(...points.map((p) => distanceKm(p, sight)))).toBeLessThanOrEqual(10);
+		}
 	});
 
 	it('follows continuations for page views and survives a rate-limit answer', async () => {

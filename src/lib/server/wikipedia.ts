@@ -6,19 +6,28 @@ const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RETRY_MS = 10 * 60 * 1000;
 const pending = new Map<string, Promise<Sight[]>>();
 const cache = new Map<string, { expires: number; sights: Sight[] }>();
-/** Geosearch reaches at most 10 km, so a ring of searches this far out covers an island or region. */
-const RING_KM = 18;
+/**
+ * Geosearch reaches at most 10 km, so searches are laid out on a hex grid 17 km apart
+ * (circles of 10 km then leave no gaps): the centre and a ring around it, then an outer ring
+ * reaching about 40 km, for islands and regions whose sights are spread out.
+ */
+const STEP_KM = 17;
+const ENOUGH = 12;
 
-/** The destination's centre and six points around it. */
-export function searchPoints(lat: number, lon: number): { lat: number; lon: number }[] {
-	const dLat = RING_KM / 111;
-	const dLon = RING_KM / (111 * Math.max(Math.cos((lat * Math.PI) / 180), 0.2));
+/** Search points in rings around the destination: ring 0 is the centre. */
+export function searchRings(lat: number, lon: number): { lat: number; lon: number }[][] {
+	const dLat = 1 / 111;
+	const dLon = 1 / (111 * Math.max(Math.cos((lat * Math.PI) / 180), 0.2));
+	const at = (km: number, deg: number) => ({
+		lat: lat + km * dLat * Math.sin((deg * Math.PI) / 180),
+		lon: lon + km * dLon * Math.cos((deg * Math.PI) / 180)
+	});
+	const six = (km: number, offset: number) =>
+		Array.from({ length: 6 }, (_, i) => at(km, offset + i * 60));
 	return [
-		{ lat, lon },
-		...Array.from({ length: 6 }, (_, i) => {
-			const a = (i * Math.PI) / 3;
-			return { lat: lat + dLat * Math.sin(a), lon: lon + dLon * Math.cos(a) };
-		})
+		[{ lat, lon }],
+		six(STEP_KM, 0),
+		[...six(2 * STEP_KM, 0), ...six(Math.sqrt(3) * STEP_KM, 30)]
 	];
 }
 
@@ -66,7 +75,7 @@ async function geosearch(lat: number, lon: number, fetcher: typeof fetch): Promi
 /**
  * Notable things to see in and around the destination, from Wikipedia's free geosearch
  * (no key needed). Searching only the centre of an island finds its villages and
- * municipalities, so it also searches a ring around it and keeps the most-read sights.
+ * municipalities, so it also searches rings around it and keeps the most-read sights.
  */
 export function getNearbySights(
 	latitude: number,
@@ -94,13 +103,17 @@ async function search(
 	fetcher: typeof fetch
 ): Promise<Sight[]> {
 	// One after another, not all at once: a burst of searches gets rate-limited.
+	// The outer ring only when the centre and first ring find too little (a city has plenty).
 	const bodies: unknown[] = [];
 	let failed = 0;
-	for (const p of searchPoints(latitude, longitude)) {
-		try {
-			bodies.push(...(await geosearch(p.lat, p.lon, fetcher)));
-		} catch {
-			failed++;
+	for (const ring of searchRings(latitude, longitude)) {
+		if (ring.length > 6 && parseSights(bodies, ENOUGH, place).length >= ENOUGH) break;
+		for (const p of ring) {
+			try {
+				bodies.push(...(await geosearch(p.lat, p.lon, fetcher)));
+			} catch {
+				failed++;
+			}
 		}
 	}
 	if (bodies.length === 0) return [];
