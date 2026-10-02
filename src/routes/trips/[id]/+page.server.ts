@@ -1,10 +1,20 @@
 import { randomBytes } from 'node:crypto';
 import { error, fail, redirect } from '@sveltejs/kit';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { PUBLIC_ORIGIN } from '$app/env/private';
 import { db } from '#lib/server/db/index.ts';
-import { flight, shareLink, standbyLoad, timelineItem, trip } from '#lib/server/db/schema.ts';
+import {
+	expense,
+	flight,
+	packingItem,
+	shareLink,
+	standbyLoad,
+	timelineItem,
+	trip
+} from '#lib/server/db/schema.ts';
+import { EXPENSE_CATEGORIES, parseAmount, type ExpenseCategory } from '#lib/money.ts';
 import { geocode, getTripWeather } from '#lib/server/open-meteo.ts';
+import { getNearbySights } from '#lib/server/wikipedia.ts';
 import { parseWhen, whenWindow } from '#lib/when.ts';
 import { field, getLoadsForFlights, getTripPlan, optionalField } from '#lib/server/trips.ts';
 import {
@@ -37,7 +47,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		}
 	}
 
-	const [loads, shares, weather] = await Promise.all([
+	const [loads, shares, weather, packing, expenses] = await Promise.all([
 		getLoadsForFlights(found.flights.map((f) => f.id)),
 		db
 			.select()
@@ -46,15 +56,33 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			.orderBy(desc(shareLink.createdAt)),
 		found.trip.latitude !== null && found.trip.longitude !== null
 			? getTripWeather(found.trip.latitude, found.trip.longitude, whenWindow(found.trip))
-			: Promise.resolve(null)
+			: Promise.resolve(null),
+		db
+			.select()
+			.from(packingItem)
+			.where(eq(packingItem.tripId, params.id))
+			.orderBy(asc(packingItem.createdAt), asc(packingItem.label)),
+		db
+			.select()
+			.from(expense)
+			.where(eq(expense.tripId, params.id))
+			.orderBy(desc(expense.spentOn), desc(expense.createdAt))
 	]);
 
 	const origin = PUBLIC_ORIGIN ?? url.origin;
+	const { latitude, longitude } = found.trip;
 	return {
+		// Streamed: the page renders first and the suggestions fill in.
+		sights:
+			latitude !== null && longitude !== null
+				? getNearbySights(latitude, longitude)
+				: Promise.resolve([]),
 		trip: found.trip,
 		timeline: buildTimeline(found.flights, found.items),
 		loads,
 		weather,
+		packing,
+		expenses,
 		today: new Date().toISOString().slice(0, 10),
 		shares: shares.map((s) => ({ token: s.token, url: `${origin}/s/${s.token}` }))
 	};
@@ -193,6 +221,74 @@ export const actions: Actions = {
 			standbyListed,
 			note: optionalField(data, 'note')
 		});
+	},
+
+	addPacking: async ({ params, request }) => {
+		const data = await request.formData();
+		const wanted = data
+			.getAll('label')
+			.map((l) => String(l).trim())
+			.filter(Boolean);
+		if (wanted.length === 0) return fail(400, { packingError: 'Type what to pack.' });
+
+		// Adding a preset twice shouldn't duplicate lines already on the list.
+		const existing = await db
+			.select({ label: packingItem.label })
+			.from(packingItem)
+			.where(eq(packingItem.tripId, params.id));
+		const seen = new Set(existing.map((e) => e.label.toLowerCase()));
+		const fresh = wanted.filter((l) => {
+			const key = l.toLowerCase();
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
+		if (fresh.length > 0) {
+			await db.insert(packingItem).values(fresh.map((label) => ({ tripId: params.id, label })));
+		}
+	},
+
+	togglePacking: async ({ params, request }) => {
+		const data = await request.formData();
+		await db
+			.update(packingItem)
+			.set({ packed: data.get('packed') === 'true' })
+			.where(and(eq(packingItem.id, field(data, 'id')), eq(packingItem.tripId, params.id)));
+	},
+
+	deletePacking: async ({ params, request }) => {
+		const id = field(await request.formData(), 'id');
+		await db
+			.delete(packingItem)
+			.where(and(eq(packingItem.id, id), eq(packingItem.tripId, params.id)));
+	},
+
+	addExpense: async ({ params, request }) => {
+		const data = await request.formData();
+		const description = field(data, 'description');
+		const currency = field(data, 'currency').toUpperCase();
+		const category = field(data, 'category') as ExpenseCategory;
+		if (!description) return fail(400, { expenseError: 'Say what it was for.' });
+		if (!/^[A-Z]{3}$/.test(currency)) {
+			return fail(400, { expenseError: 'Use a three-letter currency code, like EUR.' });
+		}
+		const amountMinor = parseAmount(field(data, 'amount'), currency);
+		if (amountMinor === null) return fail(400, { expenseError: 'Enter an amount, like 12.50.' });
+
+		await db.insert(expense).values({
+			tripId: params.id,
+			description,
+			amountMinor,
+			currency,
+			category: EXPENSE_CATEGORIES.includes(category) ? category : 'other',
+			spentOn: optionalField(data, 'spentOn')
+		});
+		return { expenseCurrency: currency };
+	},
+
+	deleteExpense: async ({ params, request }) => {
+		const id = field(await request.formData(), 'id');
+		await db.delete(expense).where(and(eq(expense.id, id), eq(expense.tripId, params.id)));
 	},
 
 	share: async ({ params }) => {

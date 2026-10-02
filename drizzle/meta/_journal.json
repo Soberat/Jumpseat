@@ -22,6 +22,13 @@
       "when": 1790951749543,
       "tag": "0002_planned_period",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790952935892,
+      "tag": "0003_packing_and_expenses",
+      "breakpoints": true
     }
   ]
 }

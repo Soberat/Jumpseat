@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { TIMELINE_KINDS, TRANSPORT_MODES } from '../../timeline.ts';
+import { EXPENSE_CATEGORIES } from '../../money.ts';
 
 const id = () =>
 	text('id')
@@ -101,3 +102,33 @@ export const timelineItem = sqliteTable('timeline_item', {
 });
 
 export type TimelineItem = typeof timelineItem.$inferSelect;
+
+/** One line on a trip's packing list. */
+export const packingItem = sqliteTable('packing_item', {
+	id: id(),
+	tripId: text('trip_id')
+		.notNull()
+		.references(() => trip.id, { onDelete: 'cascade' }),
+	label: text('label').notNull(),
+	packed: integer('packed', { mode: 'boolean' }).notNull().default(false),
+	createdAt: createdAt()
+});
+
+export type PackingItem = typeof packingItem.$inferSelect;
+
+/** Money spent on a trip, in the currency it was paid in. */
+export const expense = sqliteTable('expense', {
+	id: id(),
+	tripId: text('trip_id')
+		.notNull()
+		.references(() => trip.id, { onDelete: 'cascade' }),
+	description: text('description').notNull(),
+	// Minor units (cents) to avoid floating-point sums.
+	amountMinor: integer('amount_minor').notNull(),
+	currency: text('currency').notNull(),
+	category: text('category', { enum: EXPENSE_CATEGORIES }).notNull().default('other'),
+	spentOn: text('spent_on'),
+	createdAt: createdAt()
+});
+
+export type Expense = typeof expense.$inferSelect;
