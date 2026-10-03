@@ -111,7 +111,7 @@
 		<div class="mt-1.5 flex items-center gap-1" aria-label="{nights} nights">
 			{#each { length: Math.min(nights, 14) }, i (i)}
 				<span
-					class="size-3 rounded-full bg-indigo-400 shadow-[inset_-3px_-1px_0_0_theme(--color-indigo-200)] dark:bg-indigo-300 dark:shadow-[inset_-3px_-1px_0_0_theme(--color-ink-900)]"
+					class="size-3 rounded-full bg-slate-500 shadow-[inset_-3px_-1px_0_0_theme(--color-slate-300)] dark:bg-slate-400 dark:shadow-[inset_-3px_-1px_0_0_theme(--color-ink-900)]"
 				></span>
 			{/each}
 			<span class="ml-1 font-mono text-[11px] text-slate-500 dark:text-slate-400"
@@ -143,7 +143,7 @@
 	{#if timeline.days.length > 0}
 		<!-- The route line every day hangs off. -->
 		<span
-			class="absolute top-3 bottom-3 left-[11px] w-0.5 rounded-full bg-linear-to-b from-runway via-sky-400 to-violet-500 opacity-70"
+			class="absolute top-3 bottom-3 left-[11px] w-0.5 rounded-full bg-linear-to-b from-runway via-sky-400 to-emerald-500 opacity-70"
 			aria-hidden="true"
 		></span>
 	{/if}

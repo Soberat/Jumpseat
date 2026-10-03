@@ -39,11 +39,11 @@
 
 	const STYLES: Record<GanttBar['kind'], string> = {
 		flight: 'bg-sky-500 text-white',
-		stay: 'bg-indigo-500 text-white',
+		stay: 'bg-slate-600 text-white',
 		car: 'bg-runway text-ink-950',
 		transport: 'bg-teal-500 text-white',
 		restaurant: 'bg-rose-500 text-white',
-		other: 'bg-violet-500 text-white'
+		other: 'bg-emerald-600 text-white'
 	};
 	const weekday = (d: string) =>
 		new Date(`${d}T12:00:00`).toLocaleDateString(LOCALE, { weekday: 'short' });

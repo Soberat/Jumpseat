@@ -48,11 +48,11 @@
 
 	const STRIPE: Record<string, string> = {
 		flight: 'bg-sky-500',
-		stay: 'bg-indigo-500',
+		stay: 'bg-slate-600',
 		car: 'bg-runway',
 		transport: 'bg-teal-500',
 		restaurant: 'bg-rose-500',
-		other: 'bg-violet-500'
+		other: 'bg-emerald-600'
 	};
 	const icon = (c: JourneyCard) => (c.type === 'flight' ? '✈️' : itemIcon(c.item!));
 	const title = (c: JourneyCard) =>
