@@ -8,6 +8,7 @@
 		placeLabels,
 		project,
 		seamFor,
+		smoothPath,
 		splitAtSeam,
 		wrapLon,
 		type Point
@@ -72,7 +73,7 @@
 	const legs = $derived(
 		arcs.map((arc) => {
 			const pts = bow(arc.map((p) => project(p, view)));
-			const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+			const d = smoothPath(pts);
 			const xs = pts.map(([x]) => x);
 			// Where a line runs off one edge of a whole-world map, it comes back in at the other.
 			const copies = [

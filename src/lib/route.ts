@@ -196,6 +196,31 @@ export function bow(points: XY[], amount = 0.18, max = 60): XY[] {
 	});
 }
 
+/**
+ * An SVG path through the points as a smooth curve. A plane following the raw 48-segment line
+ * twitches at each corner (short flights have segments barely a pixel long); thinning it to a
+ * dozen points and joining them with Catmull-Rom curves gives it a steady heading.
+ */
+export function smoothPath(points: XY[], keep = 12): string {
+	const n = points.length;
+	const pts: XY[] =
+		n <= keep
+			? points
+			: Array.from({ length: keep }, (_, i) => points[Math.round((i * (n - 1)) / (keep - 1))]);
+	const f = (v: number) => v.toFixed(2);
+	let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
+	for (let i = 0; i < pts.length - 1; i++) {
+		const p0 = pts[Math.max(i - 1, 0)];
+		const p1 = pts[i];
+		const p2 = pts[i + 1];
+		const p3 = pts[Math.min(i + 2, pts.length - 1)];
+		const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+		const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+		d += `C${f(c1[0])} ${f(c1[1])} ${f(c2[0])} ${f(c2[1])} ${f(p2[0])} ${f(p2[1])}`;
+	}
+	return d;
+}
+
 export interface Label {
 	x: number;
 	y: number;
