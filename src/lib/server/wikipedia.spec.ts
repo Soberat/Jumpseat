@@ -72,7 +72,10 @@ const wikipediaAnswer = {
 			page('Alcatraz Island', 'Island in San Francisco Bay', 60000),
 			page('Coit Tower', 'Tower in San Francisco', 20000),
 			page('Ferry Building', 'Terminal and marketplace in San Francisco', 12000),
-			page('Some Parking Garage', 'Municipal garage in San Francisco', 80)
+			page('Some Parking Garage', 'Municipal garage in San Francisco', 80),
+			...Array.from({ length: 12 }, (_, i) =>
+				page(`Filler ${i}`, 'Museum in San Francisco', 10 + i)
+			)
 		]
 	}
 };

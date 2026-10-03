@@ -18,7 +18,7 @@ import {
 const TIMEOUT_MS = 8000;
 // Overpass is a volunteer-run service and often busy; there are several public mirrors, tried in turn.
 const OVERPASS: [url: string, timeoutMs: number][] = [
-	['https://overpass-api.de/api/interpreter', 35_000],
+	['https://overpass-api.de/api/interpreter', 55_000],
 	['https://overpass.kumi.systems/api/interpreter', 12_000],
 	['https://overpass.private.coffee/api/interpreter', 12_000]
 ];
@@ -32,7 +32,9 @@ const WIDE_M = 40_000;
 const ENOUGH_NEAR = 20;
 // Sights don't move; refresh weekly so page-view rankings stay roughly current.
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const RETRY_MS = 10 * 60 * 1000;
+const RETRY_MS = 3 * 60 * 1000;
+/** Fewer real sights than this after OpenStreetMap and Wikipedia: treat the place as sparse. */
+const ENOUGH_SIGHTS = 12;
 const pending = new Map<string, Promise<Sight[]>>();
 type Entry = { expires: number; sights: Sight[] };
 // Wikimedia asks API clients to say who they are and how to reach them.
@@ -126,6 +128,7 @@ async function overpass(
 			return { candidates: parseOverpass(body), partial: overpassPartial(body) };
 		} catch (err) {
 			last = err;
+			console.warn(`Overpass ${new URL(endpoint).host} failed:`, (err as Error).message);
 		}
 	}
 	throw last;
@@ -219,7 +222,11 @@ async function attractions(
 		const sight = page && toSight(c, page, { lat, lon }, place);
 		return sight ? [sight] : [];
 	});
-	return { sights: rankSights(sights), partial, sparse: found.length < ENOUGH_NEAR };
+	return {
+		sights: rankSights(sights),
+		partial,
+		sparse: found.length < ENOUGH_NEAR || sights.length < ENOUGH_SIGHTS
+	};
 }
 
 /** Search points in rings around the destination, 17 km apart so Wikipedia's 10 km circles leave no gaps. */

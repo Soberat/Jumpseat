@@ -13,7 +13,7 @@ export interface Sight {
 
 // Geosearch returns everything with coordinates. These are rarely what a visitor is after.
 const NOT_SIGHTS =
-	/\b(station|stop|street|road|avenue|highway|motorway|district|parish|freguesia|neighbou?rhood|borough|ward|municipality|suburb|railway|metro line|school|university faculty|company|bank|hotel|hospital|embassy|consulate|electoral|constituency|football club|sports club|airline|bus route|tram line|airport|earthquakes?|accidents?|crash(?:es)?|disasters?|massacres?|riots?|shootings?|bombings?|murders?|assassinations?|incidents?|hurricanes?|floods?|epidemics?|outbreaks?|trials?|elections?|battle of|siege|sex club|strip club|nightclub|brothel)\b/i;
+	/\b(station|stop|street|road|avenue|highway|motorway|district|parish|freguesia|neighbou?rhood|borough|ward|municipality|suburb|railway|metro line|school|university faculty|company|bank|hotel|hospital|embassy|consulate|electoral|constituency|football club|sports club|airline|bus route|tram line|airport|earthquakes?|accidents?|crash(?:es)?|disasters?|massacres?|riots?|shootings?|bombings?|murders?|assassinations?|incidents?|hurricanes?|floods?|epidemics?|outbreaks?|trials?|elections?|battle of|siege|sex club|strip club|nightclub|brothel|fires?|communit(?:y|ies)|unincorporated|estuary|cemeteries|cemetery|organi[sz]ations?|observatory|former|defunct)\b/i;
 
 // Places that are where you are, not something to do there: "Spanish island", "town in Lanzarote",
 // "one of the Canary Islands".
@@ -164,7 +164,7 @@ export function overpassQuery(lat: number, lon: number, radiusM: number, wide = 
 	const parts = kinds.flatMap(([k, v]) =>
 		['node', 'way', 'relation'].map((t) => `${t}${around}["name"]["wikidata"]["${k}"~"^(${v})$"];`)
 	);
-	return `[out:json][timeout:30];(${parts.join('')});out center qt tags 500;`;
+	return `[out:json][timeout:45];(${parts.join('')});out center qt tags 500;`;
 }
 
 /** True when Overpass gave up part-way ("Query timed out") and the answer is only some of the places. */
