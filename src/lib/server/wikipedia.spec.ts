@@ -88,8 +88,8 @@ describe('getNearbySights', () => {
 			'Ferry Building'
 		]);
 		expect(sights.map((s) => s.title)).not.toContain('1906 San Francisco earthquake');
-		// OpenStreetMap once, Wikidata once (for Alcatraz), Wikipedia once: a handful of requests.
-		expect(seen.filter((h) => h.includes('overpass'))).toHaveLength(1);
+		// OpenStreetMap near (too few found, so one wider look too), Wikidata once, Wikipedia once.
+		expect(seen.filter((h) => h.includes('overpass'))).toHaveLength(2);
 		expect(seen.filter((h) => h === 'www.wikidata.org')).toHaveLength(1);
 		expect(seen.filter((h) => h === 'en.wikipedia.org')).toHaveLength(1);
 	});

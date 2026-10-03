@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
+	overpassPartial,
 	overpassQuery,
 	parseOverpass,
 	parseSights,
@@ -14,14 +15,17 @@ import {
 } from '#lib/sights.ts';
 
 const TIMEOUT_MS = 8000;
-const OVERPASS_TIMEOUT_MS = 30000;
+const OVERPASS_TIMEOUT_MS = 40000;
 // Overpass is a volunteer-run service with a few mirrors; the second is tried if the first fails.
 const OVERPASS = [
 	'https://overpass-api.de/api/interpreter',
 	'https://overpass.kumi.systems/api/interpreter'
 ];
-/** How far from the destination's centre to look. Sights are ranked, so a wide net is fine. */
-const RADIUS_M = 30_000;
+/** A city's sights are within this; islands and regions need the wider second look. */
+const NEAR_M = 15_000;
+const WIDE_M = 40_000;
+/** Fewer candidates than this near the centre means a spread-out place: look wider. */
+const ENOUGH_NEAR = 20;
 // Sights don't move; refresh weekly so page-view rankings stay roughly current.
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RETRY_MS = 10 * 60 * 1000;
@@ -95,7 +99,13 @@ function api(host: string, params: Record<string, string>): URL {
 }
 
 /** Named, documented attractions around the destination, from OpenStreetMap. */
-async function overpass(lat: number, lon: number, fetcher: typeof fetch): Promise<Candidate[]> {
+async function overpass(
+	lat: number,
+	lon: number,
+	radiusM: number,
+	wide: boolean,
+	fetcher: typeof fetch
+): Promise<{ candidates: Candidate[]; partial: boolean }> {
 	let last: unknown;
 	for (const endpoint of OVERPASS) {
 		try {
@@ -104,12 +114,12 @@ async function overpass(lat: number, lon: number, fetcher: typeof fetch): Promis
 				fetcher,
 				{
 					method: 'POST',
-					body: new URLSearchParams({ data: overpassQuery(lat, lon, RADIUS_M) }),
+					body: new URLSearchParams({ data: overpassQuery(lat, lon, radiusM, wide) }),
 					headers: { 'content-type': 'application/x-www-form-urlencoded' }
 				},
 				OVERPASS_TIMEOUT_MS
 			);
-			return parseOverpass(body);
+			return { candidates: parseOverpass(body), partial: overpassPartial(body) };
 		} catch (err) {
 			last = err;
 		}
@@ -176,8 +186,22 @@ async function attractions(
 	lon: number,
 	place: string,
 	fetcher: typeof fetch
-): Promise<Sight[]> {
-	const picked = shortlist(await overpass(lat, lon, fetcher));
+): Promise<{ sights: Sight[]; partial: boolean }> {
+	const near = await overpass(lat, lon, NEAR_M, false, fetcher);
+	let found = near.candidates;
+	let partial = near.partial;
+	if (found.length < ENOUGH_NEAR) {
+		// A spread-out place: island, region, small town. Look further out, for the main kinds only.
+		try {
+			const wide = await overpass(lat, lon, WIDE_M, true, fetcher);
+			const have = new Set(found.map((c) => c.wikidata));
+			found = [...found, ...wide.candidates.filter((c) => !have.has(c.wikidata))];
+			partial ||= wide.partial;
+		} catch {
+			partial = true;
+		}
+	}
+	const picked = shortlist(found);
 	const missing = picked.filter((c) => !c.title && c.wikidata).map((c) => c.wikidata!);
 	const resolved = missing.length
 		? await englishTitles(missing, fetcher)
@@ -191,28 +215,36 @@ async function attractions(
 		const sight = page && toSight(c, page, { lat, lon }, place);
 		return sight ? [sight] : [];
 	});
-	return rankSights(sights);
+	return { sights: rankSights(sights), partial };
 }
 
 /** The fallback when OpenStreetMap can't be reached: Wikipedia's own "near here" search, filtered. */
 async function nearby(lat: number, lon: number, place: string, fetcher: typeof fetch) {
-	const body = await getJson(
-		api('en.wikipedia.org', {
-			action: 'query',
-			generator: 'geosearch',
-			ggscoord: `${lat}|${lon}`,
-			ggsradius: '10000',
-			ggslimit: '50',
-			prop: 'coordinates|description|pageimages|pageviews',
-			colimit: 'max',
-			piprop: 'thumbnail',
-			pithumbsize: '160',
-			pilimit: '50',
-			pvipdays: '30'
-		}),
-		fetcher
-	);
-	return parseSights(body, 16, place, { lat, lon });
+	const bodies: unknown[] = [];
+	let more: Record<string, string> | undefined = {};
+	// Page views come in batches; "continue" asks for the rest.
+	for (let round = 0; more && round < 4; round++) {
+		const body = (await getJson(
+			api('en.wikipedia.org', {
+				action: 'query',
+				generator: 'geosearch',
+				ggscoord: `${lat}|${lon}`,
+				ggsradius: '10000',
+				ggslimit: '50',
+				prop: 'coordinates|description|pageimages|pageviews',
+				colimit: 'max',
+				piprop: 'thumbnail',
+				pithumbsize: '160',
+				pilimit: '50',
+				pvipdays: '30',
+				...more
+			}),
+			fetcher
+		)) as { continue?: Record<string, string> };
+		bodies.push(body);
+		more = body.continue;
+	}
+	return parseSights(bodies, 16, place, { lat, lon });
 }
 
 /**
@@ -248,9 +280,12 @@ async function search(
 	fetcher: typeof fetch
 ): Promise<Sight[]> {
 	let sights: Sight[] | null = null;
-	let complete = true;
+	let complete: boolean;
 	try {
-		sights = await attractions(latitude, longitude, place, fetcher);
+		const found = await attractions(latitude, longitude, place, fetcher);
+		sights = found.sights;
+		// Overpass sometimes gives up part-way and returns what it had: usable, but try again soon.
+		complete = !found.partial;
 	} catch (err) {
 		console.warn(`Sights search near ${place} failed:`, (err as Error).message);
 		complete = false;

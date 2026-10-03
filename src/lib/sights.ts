@@ -13,7 +13,7 @@ export interface Sight {
 
 // Geosearch returns everything with coordinates. These are rarely what a visitor is after.
 const NOT_SIGHTS =
-	/\b(station|stop|street|road|avenue|highway|motorway|district|parish|freguesia|neighbou?rhood|borough|ward|municipality|suburb|railway|metro line|school|university faculty|company|bank|hotel|hospital|embassy|consulate|electoral|constituency|football club|sports club|airline|bus route|tram line|airport|earthquake|accident|crash|disaster|massacre|riot|shooting|bombing|murder|incident|hurricane|flood|epidemic|outbreak|trial|election|battle of|siege)\b/i;
+	/\b(station|stop|street|road|avenue|highway|motorway|district|parish|freguesia|neighbou?rhood|borough|ward|municipality|suburb|railway|metro line|school|university faculty|company|bank|hotel|hospital|embassy|consulate|electoral|constituency|football club|sports club|airline|bus route|tram line|airport|earthquakes?|accidents?|crash(?:es)?|disasters?|massacres?|riots?|shootings?|bombings?|murders?|assassinations?|incidents?|hurricanes?|floods?|epidemics?|outbreaks?|trials?|elections?|battle of|siege|sex club|strip club|nightclub|brothel)\b/i;
 
 // Places that are where you are, not something to do there: "Spanish island", "town in Lanzarote",
 // "one of the Canary Islands".
@@ -138,20 +138,36 @@ const KIND_WEIGHT: Record<string, number> = {
 	artwork: 1
 };
 
-/** The Overpass query: named places with a Wikidata entry (so someone cared enough to document them). */
-export function overpassQuery(lat: number, lon: number, radiusM: number): string {
+/**
+ * The Overpass query: named places with a Wikidata entry (so someone cared enough to document
+ * them). Only nodes and ways, never relations, and `qt` output: a wide search over everything
+ * overran the public server's time limit. `wide` (islands and regions, whose sights are far
+ * apart) drops the commonest, least interesting kinds to keep the search light.
+ */
+export function overpassQuery(lat: number, lon: number, radiusM: number, wide = false): string {
 	const around = `(around:${radiusM},${lat},${lon})`;
 	const kinds: [string, string][] = [
 		['tourism', 'attraction|museum|gallery|zoo|aquarium|theme_park|viewpoint'],
 		['historic', 'castle|fort|monument|memorial|ruins|archaeological_site|city_gate|palace|tower'],
-		['leisure', 'park|garden|nature_reserve'],
 		['natural', 'beach|peak|volcano|cave_entrance|hot_spring'],
-		['building', 'cathedral|castle|palace'],
-		['man_made', 'lighthouse|tower|bridge']
+		...(wide
+			? []
+			: ([
+					['leisure', 'park|garden|nature_reserve'],
+					['building', 'cathedral|castle|palace'],
+					['man_made', 'lighthouse|tower|bridge']
+				] as [string, string][]))
 	];
-	return `[out:json][timeout:25];(${kinds
-		.map(([k, v]) => `nwr${around}["name"]["wikidata"]["${k}"~"^(${v})$"];`)
-		.join('')});out center tags 600;`;
+	const parts = kinds.flatMap(([k, v]) =>
+		['node', 'way'].map((t) => `${t}${around}["name"]["wikidata"]["${k}"~"^(${v})$"];`)
+	);
+	return `[out:json][timeout:30];(${parts.join('')});out center qt tags 500;`;
+}
+
+/** True when Overpass gave up part-way ("Query timed out") and the answer is only some of the places. */
+export function overpassPartial(body: unknown): boolean {
+	const remark = (body as { remark?: string })?.remark;
+	return !!remark && /runtime error|timed out|out of memory/i.test(remark);
 }
 
 /** Candidates from an Overpass answer, one per Wikidata entry, nearest copy first. */

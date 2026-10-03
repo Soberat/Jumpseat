@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseOverpass, parseSights, shortlist } from './sights.ts';
+import { overpassPartial, overpassQuery, parseOverpass, parseSights, shortlist } from './sights.ts';
 
 const page = (title: string, description: string, views: number, dist = 1234) => ({
 	pageid: views,
@@ -121,5 +121,43 @@ describe('parseOverpass', () => {
 			2
 		);
 		expect(top.map((x) => x.name)).toEqual(['d', 'b']);
+	});
+});
+
+describe('Overpass helpers', () => {
+	it('builds a light query: nodes and ways only, fewer kinds when wide', () => {
+		const near = overpassQuery(37.77, -122.42, 15000);
+		expect(near).not.toContain('nwr');
+		expect(near).toContain('way(around:15000,37.77,-122.42)["name"]["wikidata"]["man_made"');
+		const wide = overpassQuery(29, -13.6, 40000, true);
+		expect(wide).toContain('"tourism"');
+		expect(wide).not.toContain('"man_made"');
+	});
+
+	it('notices when Overpass gave up part-way', () => {
+		expect(overpassPartial({ remark: 'runtime error: Query timed out in "print" at line 1' })).toBe(
+			true
+		);
+		expect(overpassPartial({ elements: [] })).toBe(false);
+	});
+
+	it('drops events, crimes and clubs from nearby articles', () => {
+		const geo = (title: string, description: string) => ({
+			pageid: title.length,
+			title,
+			description,
+			coordinates: [{ lat: 1, lon: 1 }],
+			pageviews: { a: 100 }
+		});
+		const sights = parseSights({
+			query: {
+				pages: [
+					geo('Assassinations of George Moscone and Harvey Milk', '1978 murders in San Francisco'),
+					geo('Caldron (sex club)', 'Gay sex club in San Francisco'),
+					geo('Civic Center Plaza', 'Plaza in San Francisco')
+				]
+			}
+		});
+		expect(sights.map((s) => s.title)).toEqual(['Civic Center Plaza']);
 	});
 });
