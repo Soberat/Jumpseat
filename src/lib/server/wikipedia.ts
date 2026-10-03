@@ -1,15 +1,30 @@
 import { readFileSync } from 'node:fs';
 import { rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { parseSights, type Sight } from '#lib/sights.ts';
+import {
+	overpassQuery,
+	parseOverpass,
+	parseSights,
+	rankSights,
+	shortlist,
+	toSight,
+	type Candidate,
+	type GeoPage,
+	type Sight
+} from '#lib/sights.ts';
 
-const TIMEOUT_MS = 5000;
+const TIMEOUT_MS = 8000;
+const OVERPASS_TIMEOUT_MS = 30000;
+// Overpass is a volunteer-run service with a few mirrors; the second is tried if the first fails.
+const OVERPASS = [
+	'https://overpass-api.de/api/interpreter',
+	'https://overpass.kumi.systems/api/interpreter'
+];
+/** How far from the destination's centre to look. Sights are ranked, so a wide net is fine. */
+const RADIUS_M = 30_000;
 // Sights don't move; refresh weekly so page-view rankings stay roughly current.
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RETRY_MS = 10 * 60 * 1000;
-/** Overridable so tests don't wait. */
-export const timing = { pause: 250, retryAfter: 2000 };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pending = new Map<string, Promise<Sight[]>>();
 type Entry = { expires: number; sights: Sight[] };
 // Wikimedia asks API clients to say who they are and how to reach them.
@@ -46,86 +61,165 @@ async function remember(key: string, entry: Entry) {
 }
 
 class RateLimited extends Error {}
-/**
- * Geosearch reaches at most 10 km, so searches are laid out on a hex grid 17 km apart
- * (circles of 10 km then leave no gaps): the centre and a ring around it, then an outer ring
- * reaching about 40 km, for islands and regions whose sights are spread out.
- */
-const STEP_KM = 17;
-// A city centre easily turns up this many; an island's middle doesn't, and needs the outer ring.
-const ENOUGH = 24;
 
-/** Search points in rings around the destination: ring 0 is the centre. */
-export function searchRings(lat: number, lon: number): { lat: number; lon: number }[][] {
-	const dLat = 1 / 111;
-	const dLon = 1 / (111 * Math.max(Math.cos((lat * Math.PI) / 180), 0.2));
-	const at = (km: number, deg: number) => ({
-		lat: lat + km * dLat * Math.sin((deg * Math.PI) / 180),
-		lon: lon + km * dLon * Math.cos((deg * Math.PI) / 180)
+/** GETs or POSTs JSON from a Wikimedia or OpenStreetMap service; refusals become errors. */
+async function getJson(
+	url: URL | string,
+	fetcher: typeof fetch,
+	init: RequestInit = {},
+	timeout = TIMEOUT_MS
+): Promise<unknown> {
+	const res = await fetcher(url, {
+		...init,
+		signal: AbortSignal.timeout(timeout),
+		headers: { 'user-agent': USER_AGENT, ...init.headers }
 	});
-	const six = (km: number, offset: number) =>
-		Array.from({ length: 6 }, (_, i) => at(km, offset + i * 60));
-	return [
-		[{ lat, lon }],
-		six(STEP_KM, 0),
-		[...six(2 * STEP_KM, 0), ...six(Math.sqrt(3) * STEP_KM, 30)]
-	];
-}
-
-const PARAMS = {
-	action: 'query',
-	format: 'json',
-	formatversion: '2',
-	generator: 'geosearch',
-	ggsradius: '10000',
-	ggslimit: '50',
-	prop: 'coordinates|description|pageimages|pageviews',
-	// Without this only the first 10 pages get coordinates.
-	colimit: 'max',
-	piprop: 'thumbnail',
-	pithumbsize: '160',
-	pilimit: '50',
-	pvipdays: '30'
-};
-
-/**
- * One geosearch, following "continue" so every page gets its page views (they come in
- * batches). Throws on anything but a JSON answer, such as Wikipedia's rate-limit message.
- */
-async function geosearch(lat: number, lon: number, fetcher: typeof fetch): Promise<unknown[]> {
-	const bodies: unknown[] = [];
-	let more: Record<string, string> | undefined = {};
-	for (let round = 0; more && round < 4; round++) {
-		const url = new URL('https://en.wikipedia.org/w/api.php');
-		for (const [k, v] of Object.entries({ ...PARAMS, ggscoord: `${lat}|${lon}`, ...more })) {
-			url.searchParams.set(k, v);
-		}
-		const res = await fetcher(url, {
-			signal: AbortSignal.timeout(TIMEOUT_MS),
-			// Wikimedia asks API clients to identify themselves.
-			headers: { 'user-agent': USER_AGENT }
-		});
-		if (res.status === 429) throw new RateLimited('Wikipedia answered 429');
-		if (!res.ok) throw new Error(`Wikipedia answered ${res.status}`);
-		const text = await res.text();
-		let body: { continue?: Record<string, string> };
-		try {
-			body = JSON.parse(text);
-		} catch {
-			// The "too many requests" refusal sometimes comes back as plain text with a 200.
-			if (/too many requests/i.test(text)) throw new RateLimited('Wikipedia: too many requests');
-			throw new Error(`Wikipedia answered: ${text.slice(0, 80)}`);
-		}
-		bodies.push(body);
-		more = body.continue;
+	if (res.status === 429) throw new RateLimited(`${new URL(url).host} answered 429`);
+	if (!res.ok) throw new Error(`${new URL(url).host} answered ${res.status}`);
+	const text = await res.text();
+	try {
+		return JSON.parse(text);
+	} catch {
+		// "Too many requests" sometimes comes back as plain text with a 200.
+		if (/too many requests|rate.?limit/i.test(text)) throw new RateLimited('too many requests');
+		throw new Error(`${new URL(url).host} answered: ${text.slice(0, 80)}`);
 	}
-	return bodies;
+}
+
+function api(host: string, params: Record<string, string>): URL {
+	const url = new URL(`https://${host}/w/api.php`);
+	for (const [k, v] of Object.entries({ format: 'json', formatversion: '2', ...params })) {
+		url.searchParams.set(k, v);
+	}
+	return url;
+}
+
+/** Named, documented attractions around the destination, from OpenStreetMap. */
+async function overpass(lat: number, lon: number, fetcher: typeof fetch): Promise<Candidate[]> {
+	let last: unknown;
+	for (const endpoint of OVERPASS) {
+		try {
+			const body = await getJson(
+				endpoint,
+				fetcher,
+				{
+					method: 'POST',
+					body: new URLSearchParams({ data: overpassQuery(lat, lon, RADIUS_M) }),
+					headers: { 'content-type': 'application/x-www-form-urlencoded' }
+				},
+				OVERPASS_TIMEOUT_MS
+			);
+			return parseOverpass(body);
+		} catch (err) {
+			last = err;
+		}
+	}
+	throw last;
+}
+
+const chunks = <T>(xs: T[], n: number) =>
+	Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, (i + 1) * n));
+
+/** English Wikipedia titles for Wikidata ids (up to 50 per request). */
+async function englishTitles(ids: string[], fetcher: typeof fetch): Promise<Map<string, string>> {
+	const out = new Map<string, string>();
+	for (const batch of chunks(ids, 50)) {
+		const body = (await getJson(
+			api('www.wikidata.org', {
+				action: 'wbgetentities',
+				ids: batch.join('|'),
+				props: 'sitelinks',
+				sitefilter: 'enwiki'
+			}),
+			fetcher
+		)) as { entities?: Record<string, { sitelinks?: { enwiki?: { title: string } } }> };
+		for (const [id, e] of Object.entries(body.entities ?? {})) {
+			if (e.sitelinks?.enwiki?.title) out.set(id, e.sitelinks.enwiki.title);
+		}
+	}
+	return out;
+}
+
+/** What English Wikipedia says about each title: a description, a picture and last month's readers. */
+async function articles(titles: string[], fetcher: typeof fetch): Promise<Map<string, GeoPage>> {
+	const out = new Map<string, GeoPage>();
+	for (const batch of chunks(titles, 50)) {
+		let more: Record<string, string> | undefined = {};
+		// Page views come in batches; "continue" asks for the rest.
+		for (let round = 0; more && round < 4; round++) {
+			const body = (await getJson(
+				api('en.wikipedia.org', {
+					action: 'query',
+					titles: batch.join('|'),
+					redirects: '1',
+					prop: 'description|pageimages|pageviews',
+					piprop: 'thumbnail',
+					pithumbsize: '160',
+					pilimit: '50',
+					pvipdays: '30',
+					...more
+				}),
+				fetcher
+			)) as { continue?: Record<string, string>; query?: { pages?: GeoPage[] } };
+			for (const p of body.query?.pages ?? []) {
+				out.set(p.title, { ...out.get(p.title), ...p });
+			}
+			more = body.continue;
+		}
+	}
+	return out;
+}
+
+/** Things to see from OpenStreetMap, ranked by how many people read about them on Wikipedia. */
+async function attractions(
+	lat: number,
+	lon: number,
+	place: string,
+	fetcher: typeof fetch
+): Promise<Sight[]> {
+	const picked = shortlist(await overpass(lat, lon, fetcher));
+	const missing = picked.filter((c) => !c.title && c.wikidata).map((c) => c.wikidata!);
+	const resolved = missing.length
+		? await englishTitles(missing, fetcher)
+		: new Map<string, string>();
+	const withTitle = picked
+		.map((c) => ({ c, title: c.title ?? resolved.get(c.wikidata ?? '') ?? null }))
+		.filter((x): x is { c: Candidate; title: string } => !!x.title);
+	const pages = await articles([...new Set(withTitle.map((x) => x.title))], fetcher);
+	const sights = withTitle.flatMap(({ c, title }) => {
+		const page = pages.get(title);
+		const sight = page && toSight(c, page, { lat, lon }, place);
+		return sight ? [sight] : [];
+	});
+	return rankSights(sights);
+}
+
+/** The fallback when OpenStreetMap can't be reached: Wikipedia's own "near here" search, filtered. */
+async function nearby(lat: number, lon: number, place: string, fetcher: typeof fetch) {
+	const body = await getJson(
+		api('en.wikipedia.org', {
+			action: 'query',
+			generator: 'geosearch',
+			ggscoord: `${lat}|${lon}`,
+			ggsradius: '10000',
+			ggslimit: '50',
+			prop: 'coordinates|description|pageimages|pageviews',
+			colimit: 'max',
+			piprop: 'thumbnail',
+			pithumbsize: '160',
+			pilimit: '50',
+			pvipdays: '30'
+		}),
+		fetcher
+	);
+	return parseSights(body, 16, place, { lat, lon });
 }
 
 /**
- * Notable things to see in and around the destination, from Wikipedia's free geosearch
- * (no key needed). Searching only the centre of an island finds its villages and
- * municipalities, so it also searches rings around it and keeps the most-read sights.
+ * Notable things to see in and around the destination. Places come from OpenStreetMap (only
+ * named ones with a Wikidata entry, of kinds people visit), then Wikipedia says how many people
+ * read about each, which ranks them. Wikipedia's own geosearch is no good for this on its own:
+ * it returns events and accidents tied to a place ("1906 San Francisco earthquake").
  */
 export function getNearbySights(
 	latitude: number,
@@ -133,7 +227,8 @@ export function getNearbySights(
 	place = '',
 	fetcher = fetch
 ): Promise<Sight[]> {
-	const key = `${latitude.toFixed(3)},${longitude.toFixed(3)},${place}`;
+	// "v2": the first version's cached lists came from Wikipedia's geosearch.
+	const key = `v2,${latitude.toFixed(3)},${longitude.toFixed(3)},${place}`;
 	const hit = entries().get(key);
 	if (hit && hit.expires > Date.now()) return Promise.resolve(hit.sights);
 	// The trip page and the journey can ask at the same time; search once for both.
@@ -152,38 +247,21 @@ async function search(
 	place: string,
 	fetcher: typeof fetch
 ): Promise<Sight[]> {
-	// One after another, not all at once: a burst of searches gets rate-limited.
-	// The outer ring only when the centre and first ring find too little (a city has plenty).
-	const bodies: unknown[] = [];
-	let failed = 0;
-	let refused = false;
-	search: for (const ring of searchRings(latitude, longitude)) {
-		if (ring.length > 6 && parseSights(bodies, ENOUGH, place).length >= ENOUGH) break;
-		for (const p of ring) {
-			// A short pause between searches, and one more try after a longer one.
-			for (const [attempt, delay] of [timing.pause, timing.retryAfter].entries()) {
-				await sleep(delay);
-				try {
-					bodies.push(...(await geosearch(p.lat, p.lon, fetcher)));
-					break;
-				} catch (err) {
-					if (attempt === 0 && !(err instanceof RateLimited)) continue;
-					failed++;
-					console.warn(`Sights search near ${place} failed:`, (err as Error).message);
-					// Asking again straight away only extends the block: keep what we have.
-					if (err instanceof RateLimited) {
-						refused = true;
-						break search;
-					}
-					break;
-				}
-			}
+	let sights: Sight[] | null = null;
+	let complete = true;
+	try {
+		sights = await attractions(latitude, longitude, place, fetcher);
+	} catch (err) {
+		console.warn(`Sights search near ${place} failed:`, (err as Error).message);
+		complete = false;
+		try {
+			sights = await nearby(latitude, longitude, place, fetcher);
+		} catch (err2) {
+			console.warn(`Fallback sights search near ${place} failed:`, (err2 as Error).message);
 		}
 	}
-	const stale = entries().get(key);
-	if (bodies.length === 0) return stale?.sights ?? [];
-	const sights = parseSights(bodies, 16, place, { lat: latitude, lon: longitude });
-	// A partial answer is only kept briefly, so a later visit tries the missing searches again.
-	await remember(key, { expires: Date.now() + (failed || refused ? RETRY_MS : TTL_MS), sights });
+	if (!sights || sights.length === 0) return entries().get(key)?.sights ?? [];
+	// A fallback list is only kept briefly, so a later visit tries the good source again.
+	await remember(key, { expires: Date.now() + (complete ? TTL_MS : RETRY_MS), sights });
 	return sights;
 }

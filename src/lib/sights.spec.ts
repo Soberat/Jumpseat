@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSights } from './sights.ts';
+import { parseOverpass, parseSights, shortlist } from './sights.ts';
 
 const page = (title: string, description: string, views: number, dist = 1234) => ({
 	pageid: views,
@@ -78,5 +78,48 @@ describe('parseSights around an island', () => {
 		const sights = parseSights([middle, north, west], 12, 'Lanzarote', centre);
 		expect(sights.map((s) => s.title)).toEqual(['Timanfaya National Park', 'Jameos del Agua']);
 		expect(sights[1].distanceKm).toBeGreaterThan(20);
+	});
+});
+
+describe('parseOverpass', () => {
+	const el = (id: number, tags: Record<string, string>) => ({
+		type: 'node',
+		id,
+		lat: 1,
+		lon: 2,
+		tags
+	});
+
+	it('keeps named places with a Wikidata id, one per id, preferring the better kind', () => {
+		const found = parseOverpass({
+			elements: [
+				el(1, { name: 'Park gate', historic: 'city_gate', wikidata: 'Q1' }),
+				el(2, { name: 'Big Park', leisure: 'park', wikidata: 'Q1' }),
+				el(3, { name: 'Castle', historic: 'castle', wikidata: 'Q2', wikipedia: 'en:Castle' }),
+				el(4, { name: 'No id', tourism: 'museum' }),
+				el(5, { tourism: 'museum', wikidata: 'Q3' }),
+				el(6, { name: 'Bad id', tourism: 'museum', wikidata: 'nope' })
+			]
+		});
+		expect(found.map((c) => [c.name, c.wikidata, c.title, c.kind])).toEqual([
+			['Big Park', 'Q1', null, 'park'],
+			['Castle', 'Q2', 'Castle', 'castle']
+		]);
+	});
+
+	it('puts the sights worth a trip first when choosing what to look up', () => {
+		const c = (name: string, kind: string, title: string | null = null) => ({
+			name,
+			kind,
+			title,
+			lat: 0,
+			lon: 0,
+			wikidata: 'Q1'
+		});
+		const top = shortlist(
+			[c('a', 'artwork'), c('b', 'museum'), c('c', 'church'), c('d', 'castle', 'D')],
+			2
+		);
+		expect(top.map((x) => x.name)).toEqual(['d', 'b']);
 	});
 });
