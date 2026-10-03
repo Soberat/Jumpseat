@@ -15,11 +15,12 @@ import {
 } from '#lib/sights.ts';
 
 const TIMEOUT_MS = 8000;
-const OVERPASS_TIMEOUT_MS = 40000;
-// Overpass is a volunteer-run service with a few mirrors; the second is tried if the first fails.
+const OVERPASS_TIMEOUT_MS = 20000;
+// Overpass is a volunteer-run service and often busy; there are several public mirrors, tried in turn.
 const OVERPASS = [
 	'https://overpass-api.de/api/interpreter',
-	'https://overpass.kumi.systems/api/interpreter'
+	'https://overpass.kumi.systems/api/interpreter',
+	'https://overpass.private.coffee/api/interpreter'
 ];
 /** A city's sights are within this; islands and regions need the wider second look. */
 const NEAR_M = 15_000;
@@ -259,8 +260,8 @@ export function getNearbySights(
 	place = '',
 	fetcher = fetch
 ): Promise<Sight[]> {
-	// "v2": the first version's cached lists came from Wikipedia's geosearch.
-	const key = `v2,${latitude.toFixed(3)},${longitude.toFixed(3)},${place}`;
+	// "v3": earlier versions cached lists from other sources, some of them poor.
+	const key = `v3,${latitude.toFixed(3)},${longitude.toFixed(3)},${place}`;
 	const hit = entries().get(key);
 	if (hit && hit.expires > Date.now()) return Promise.resolve(hit.sights);
 	// The trip page and the journey can ask at the same time; search once for both.
@@ -269,7 +270,8 @@ export function getNearbySights(
 		running = search(key, latitude, longitude, place, fetcher).finally(() => pending.delete(key));
 		pending.set(key, running);
 	}
-	return running;
+	// An out-of-date list beats a minute of waiting: show it now, refresh behind it.
+	return hit ? Promise.resolve(hit.sights) : running;
 }
 
 async function search(
@@ -295,7 +297,12 @@ async function search(
 			console.warn(`Fallback sights search near ${place} failed:`, (err2 as Error).message);
 		}
 	}
-	if (!sights || sights.length === 0) return entries().get(key)?.sights ?? [];
+	if (!sights || sights.length === 0) {
+		// Nothing found: remember that for a while too, so each page load isn't a slow search.
+		const kept = entries().get(key)?.sights ?? [];
+		await remember(key, { expires: Date.now() + RETRY_MS, sights: kept });
+		return kept;
+	}
 	// A fallback list is only kept briefly, so a later visit tries the good source again.
 	await remember(key, { expires: Date.now() + (complete ? TTL_MS : RETRY_MS), sights });
 	return sights;
