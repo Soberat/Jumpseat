@@ -135,13 +135,14 @@ const KIND_WEIGHT: Record<string, number> = {
 	church: 2,
 	theatre: 3,
 	city_gate: 2,
-	artwork: 1
+	artwork: 1,
+	island: 3,
+	islet: 2
 };
 
 /**
  * The Overpass query: named places with a Wikidata entry (so someone cared enough to document
- * them). Only nodes and ways, never relations, and `qt` output: a wide search over everything
- * overran the public server's time limit. `wide` (islands and regions, whose sights are far
+ * them), with `qt` output; a wide search over everything overran the public server's time limit. `wide` (islands and regions, whose sights are far
  * apart) drops the commonest, least interesting kinds to keep the search light.
  */
 export function overpassQuery(lat: number, lon: number, radiusM: number, wide = false): string {
@@ -150,6 +151,7 @@ export function overpassQuery(lat: number, lon: number, radiusM: number, wide = 
 		['tourism', 'attraction|museum|gallery|zoo|aquarium|theme_park|viewpoint'],
 		['historic', 'castle|fort|monument|memorial|ruins|archaeological_site|city_gate|palace|tower'],
 		['natural', 'beach|peak|volcano|cave_entrance|hot_spring'],
+		['place', 'island|islet'],
 		...(wide
 			? []
 			: ([
@@ -158,8 +160,9 @@ export function overpassQuery(lat: number, lon: number, radiusM: number, wide = 
 					['man_made', 'lighthouse|tower|bridge']
 				] as [string, string][]))
 	];
+	// Relations too, but only here: big parks and bridges are often mapped as one.
 	const parts = kinds.flatMap(([k, v]) =>
-		['node', 'way'].map((t) => `${t}${around}["name"]["wikidata"]["${k}"~"^(${v})$"];`)
+		['node', 'way', 'relation'].map((t) => `${t}${around}["name"]["wikidata"]["${k}"~"^(${v})$"];`)
 	);
 	return `[out:json][timeout:30];(${parts.join('')});out center qt tags 500;`;
 }
@@ -182,7 +185,7 @@ export function parseOverpass(body: unknown): Candidate[] {
 		if (!name || lat === undefined || lon === undefined || !/^Q\d+$/.test(t.wikidata ?? ''))
 			continue;
 		const kind =
-			[t.tourism, t.historic, t.natural, t.building, t.leisure, t.man_made].find(
+			[t.tourism, t.historic, t.natural, t.building, t.leisure, t.man_made, t.place].find(
 				(k) => k && KIND_WEIGHT[k] !== undefined
 			) ?? 'other';
 		const en = /^en:(.+)$/.exec(t.wikipedia ?? '')?.[1] ?? null;
@@ -230,4 +233,13 @@ export function toSight(
 export function rankSights(sights: Sight[], limit = 16): Sight[] {
 	const score = (s: Sight) => s.popularity / (1 + s.distanceKm / 25);
 	return sights.toSorted((a, b) => score(b) - score(a)).slice(0, limit);
+}
+
+/** The same place from two sources: keep the first. */
+export function uniqueSights(sights: Sight[]): Sight[] {
+	const seen = new Set<string>();
+	return sights.filter((s) => {
+		const k = bare(s.title);
+		return !seen.has(k) && !!seen.add(k);
+	});
 }

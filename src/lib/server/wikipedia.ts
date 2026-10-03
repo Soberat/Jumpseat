@@ -7,6 +7,7 @@ import {
 	parseOverpass,
 	parseSights,
 	rankSights,
+	uniqueSights,
 	shortlist,
 	toSight,
 	type Candidate,
@@ -15,13 +16,15 @@ import {
 } from '#lib/sights.ts';
 
 const TIMEOUT_MS = 8000;
-const OVERPASS_TIMEOUT_MS = 20000;
 // Overpass is a volunteer-run service and often busy; there are several public mirrors, tried in turn.
-const OVERPASS = [
-	'https://overpass-api.de/api/interpreter',
-	'https://overpass.kumi.systems/api/interpreter',
-	'https://overpass.private.coffee/api/interpreter'
+const OVERPASS: [url: string, timeoutMs: number][] = [
+	['https://overpass-api.de/api/interpreter', 35_000],
+	['https://overpass.kumi.systems/api/interpreter', 12_000],
+	['https://overpass.private.coffee/api/interpreter', 12_000]
 ];
+/** Wikipedia's nearby search finds nothing but nearest-first pages, 10 km at most: pause between searches. */
+/** Overridable so tests don't wait. */
+export const timing = { pause: 250 };
 /** A city's sights are within this; islands and regions need the wider second look. */
 const NEAR_M = 15_000;
 const WIDE_M = 40_000;
@@ -108,7 +111,7 @@ async function overpass(
 	fetcher: typeof fetch
 ): Promise<{ candidates: Candidate[]; partial: boolean }> {
 	let last: unknown;
-	for (const endpoint of OVERPASS) {
+	for (const [endpoint, timeoutMs] of OVERPASS) {
 		try {
 			const body = await getJson(
 				endpoint,
@@ -118,7 +121,7 @@ async function overpass(
 					body: new URLSearchParams({ data: overpassQuery(lat, lon, radiusM, wide) }),
 					headers: { 'content-type': 'application/x-www-form-urlencoded' }
 				},
-				OVERPASS_TIMEOUT_MS
+				timeoutMs
 			);
 			return { candidates: parseOverpass(body), partial: overpassPartial(body) };
 		} catch (err) {
@@ -187,7 +190,7 @@ async function attractions(
 	lon: number,
 	place: string,
 	fetcher: typeof fetch
-): Promise<{ sights: Sight[]; partial: boolean }> {
+): Promise<{ sights: Sight[]; partial: boolean; sparse: boolean }> {
 	const near = await overpass(lat, lon, NEAR_M, false, fetcher);
 	let found = near.candidates;
 	let partial = near.partial;
@@ -216,14 +219,31 @@ async function attractions(
 		const sight = page && toSight(c, page, { lat, lon }, place);
 		return sight ? [sight] : [];
 	});
-	return { sights: rankSights(sights), partial };
+	return { sights: rankSights(sights), partial, sparse: found.length < ENOUGH_NEAR };
 }
 
-/** The fallback when OpenStreetMap can't be reached: Wikipedia's own "near here" search, filtered. */
-async function nearby(lat: number, lon: number, place: string, fetcher: typeof fetch) {
+/** Search points in rings around the destination, 17 km apart so Wikipedia's 10 km circles leave no gaps. */
+export function searchRings(lat: number, lon: number): { lat: number; lon: number }[][] {
+	const STEP_KM = 17;
+	const dLat = 1 / 111;
+	const dLon = 1 / (111 * Math.max(Math.cos((lat * Math.PI) / 180), 0.2));
+	const at = (km: number, deg: number) => ({
+		lat: lat + km * dLat * Math.sin((deg * Math.PI) / 180),
+		lon: lon + km * dLon * Math.cos((deg * Math.PI) / 180)
+	});
+	const six = (km: number, offset: number) =>
+		Array.from({ length: 6 }, (_, i) => at(km, offset + i * 60));
+	return [
+		[{ lat, lon }],
+		six(STEP_KM, 0),
+		[...six(2 * STEP_KM, 0), ...six(Math.sqrt(3) * STEP_KM, 30)]
+	];
+}
+
+/** One "near here" search, following "continue" so every article gets its page views. */
+async function geosearch(lat: number, lon: number, fetcher: typeof fetch): Promise<unknown[]> {
 	const bodies: unknown[] = [];
 	let more: Record<string, string> | undefined = {};
-	// Page views come in batches; "continue" asks for the rest.
 	for (let round = 0; more && round < 4; round++) {
 		const body = (await getJson(
 			api('en.wikipedia.org', {
@@ -245,7 +265,38 @@ async function nearby(lat: number, lon: number, place: string, fetcher: typeof f
 		bodies.push(body);
 		more = body.continue;
 	}
-	return parseSights(bodies, 16, place, { lat, lon });
+	return bodies;
+}
+
+/**
+ * Wikipedia's own "near here" search over the first `rings` rings. On its own it is no good for
+ * things to do (it returns events and accidents tied to a place, and in a dense city only the
+ * nearest 50 articles), but on an island or in the countryside it finds the sights OpenStreetMap
+ * has no Wikidata for. Stops at the first "too many requests".
+ */
+async function nearby(
+	lat: number,
+	lon: number,
+	place: string,
+	fetcher: typeof fetch,
+	rings: number
+): Promise<{ sights: Sight[]; partial: boolean }> {
+	const bodies: unknown[] = [];
+	let partial = false;
+	search: for (const ring of searchRings(lat, lon).slice(0, rings)) {
+		for (const p of ring) {
+			try {
+				bodies.push(...(await geosearch(p.lat, p.lon, fetcher)));
+			} catch (err) {
+				partial = true;
+				console.warn(`Nearby search near ${place} failed:`, (err as Error).message);
+				if (err instanceof RateLimited) break search;
+			}
+			await new Promise((r) => setTimeout(r, timing.pause));
+		}
+	}
+	if (bodies.length === 0 && partial) throw new Error('no nearby search worked');
+	return { sights: parseSights(bodies, 30, place, { lat, lon }), partial };
 }
 
 /**
@@ -260,8 +311,8 @@ export function getNearbySights(
 	place = '',
 	fetcher = fetch
 ): Promise<Sight[]> {
-	// "v3": earlier versions cached lists from other sources, some of them poor.
-	const key = `v3,${latitude.toFixed(3)},${longitude.toFixed(3)},${place}`;
+	// "v4": earlier versions cached lists from other sources, some of them poor or too short.
+	const key = `v4,${latitude.toFixed(3)},${longitude.toFixed(3)},${place}`;
 	const hit = entries().get(key);
 	if (hit && hit.expires > Date.now()) return Promise.resolve(hit.sights);
 	// The trip page and the journey can ask at the same time; search once for both.
@@ -288,11 +339,24 @@ async function search(
 		sights = found.sights;
 		// Overpass sometimes gives up part-way and returns what it had: usable, but try again soon.
 		complete = !found.partial;
+		if (found.sparse) {
+			// An island or the countryside: OpenStreetMap documents few places there, so add
+			// what Wikipedia knows about, out to about 40 km.
+			try {
+				const extra = await nearby(latitude, longitude, place, fetcher, 3);
+				sights = rankSights(uniqueSights([...sights, ...extra.sights]));
+				complete &&= !extra.partial;
+			} catch {
+				complete = false;
+			}
+		}
 	} catch (err) {
 		console.warn(`Sights search near ${place} failed:`, (err as Error).message);
 		complete = false;
 		try {
-			sights = await nearby(latitude, longitude, place, fetcher);
+			// OpenStreetMap is down: the centre and the first ring of Wikipedia's search will do.
+			const fallback = await nearby(latitude, longitude, place, fetcher, 2);
+			sights = rankSights(fallback.sights);
 		} catch (err2) {
 			console.warn(`Fallback sights search near ${place} failed:`, (err2 as Error).message);
 		}

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { getNearbySights } from './wikipedia.ts';
+import { getNearbySights, searchRings, timing } from './wikipedia.ts';
+
+timing.pause = 0;
 
 const SF = { lat: 37.7749, lon: -122.4194 };
 
@@ -41,7 +43,15 @@ const overpassAnswer = {
 			wikidata: 'Q999',
 			wikipedia: 'en:Some Parking Garage'
 		}),
-		osm(6, 'No Wikidata Gallery', { tourism: 'gallery' })
+		osm(6, 'No Wikidata Gallery', { tourism: 'gallery' }),
+		// Enough other places that this counts as a dense destination (no wider look needed).
+		...Array.from({ length: 25 }, (_, i) =>
+			osm(100 + i, `Filler ${i}`, {
+				tourism: 'museum',
+				wikidata: `Q${1000 + i}`,
+				wikipedia: `en:Filler ${i}`
+			})
+		)
 	]
 };
 
@@ -88,10 +98,51 @@ describe('getNearbySights', () => {
 			'Ferry Building'
 		]);
 		expect(sights.map((s) => s.title)).not.toContain('1906 San Francisco earthquake');
-		// OpenStreetMap near (too few found, so one wider look too), Wikidata once, Wikipedia once.
-		expect(seen.filter((h) => h.includes('overpass'))).toHaveLength(2);
+		// One OpenStreetMap request, one Wikidata (for Alcatraz), one Wikipedia: no wider look.
+		expect(seen.filter((h) => h.includes('overpass'))).toHaveLength(1);
 		expect(seen.filter((h) => h === 'www.wikidata.org')).toHaveLength(1);
 		expect(seen.filter((h) => h === 'en.wikipedia.org')).toHaveLength(1);
+	});
+
+	it('adds the nearby search ring by ring where OpenStreetMap knows little', async () => {
+		let geosearches = 0;
+		const fetcher = (async (url: URL | string) => {
+			const u = new URL(url);
+			if (u.host.includes('overpass')) {
+				return json({
+					elements: [
+						osm(1, 'Islet Fort', { historic: 'fort', wikidata: 'Q7', wikipedia: 'en:Islet Fort' })
+					]
+				});
+			}
+			if (u.searchParams.get('generator') === 'geosearch') {
+				geosearches++;
+				// Only the first ring point (the second search) knows it.
+				return json({
+					query: {
+						pages:
+							geosearches === 2
+								? [
+										{
+											pageid: 5,
+											title: 'Timanfaya National Park',
+											description: 'National park in Spain',
+											coordinates: [{ lat: 29.0, lon: -13.7 }],
+											pageviews: { a: 2000 }
+										}
+									]
+								: []
+					}
+				});
+			}
+			return json({
+				query: { pages: [page('Islet Fort', 'Fort on an islet', 300)] }
+			});
+		}) as typeof fetch;
+		const sights = await getNearbySights(29.5, -13.2, 'Some island', fetcher);
+		expect(sights.map((s) => s.title)).toEqual(['Timanfaya National Park', 'Islet Fort']);
+		expect(geosearches).toBe(19);
+		expect(searchRings(29.5, -13.2).flat()).toHaveLength(19);
 	});
 
 	it('falls back to nearby articles, filtered, when OpenStreetMap is down', async () => {
